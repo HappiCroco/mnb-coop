@@ -115,7 +115,62 @@ for the P1 replacement scans and all P2 thresholds via `coopSquadMax()`. P3 (fac
 Menu idea (built): keep the vanilla 6-card squad screens and add a "page" switch that swaps soldiers 1-6 with 7-12 in the
 list while in menus (all vanilla menu code reads slots 1..6), swapped back before a mission starts.
 
+## Own rosters (owner's design, 2026-11-11; built in v0.6.0, headless test 36 checks, not yet tried in-game)
+Code: coop_campaign.lua (normalize, arrangeSquad, settleMission at BACK from the mission-end page, onSeatLeft,
+sendRoster on welcome/sort/results, applyPendingResults once back from the battle view, Squad-screen right-drag).
+`campaign.track()` follows `player` because the game reloads it from the save (pause Options, urb_engine.lua:45029).
+Replaces "every friend's soldiers live in the host's save" (that made replacements and changing players janky).
+- **Every player has their own co-op save** on their own PC (`coop/campaign/saveMNB3.lua`, the co-op profile). Its
+  squad slots 1..6 ARE that player's roster. The CO-OP CAMPAIGN tile opens the game's main menu on it for anyone
+  (Career, Squad...); only the host (or offline) can start a mission, and missions use the host's day/sector.
+- **Sorting** on the co-op Squad screen (the game has none). The top slots are the soldiers you bring: your share of
+  the 6 (solo 6, duo 3, trio 2). The rest stay home.
+- **Mission start:** clients send their top soldiers to the host (kept up to date: on join, after sorting, after
+  results). Each roster soldier carries a stable `coopUid` so results find their way back.
+- **Mission end:** the host sends each player their soldiers back (results: XP, ranks, awards, wounds; KIA removed;
+  a soldier the game put in that player's slot as a replacement joins their roster). **Soldiers at home get half the
+  average XP the fielded ones gained.** The host does the same for its own roster.
+- **A player leaves mid-mission** (owner changed this the same day): their soldiers pull out with them, walking to
+  the nearest edge (top or bottom); off the map, or after 30 s, they are taken off (parked at -9999, removed at the
+  settle). Nothing counts for that player. **A player who joins mid-mission** brings their top soldiers in as
+  reinforcements into the freed slots, from the left edge like the game's own (x 50, y 350 +-50, to the front line).
+  Slots belong to a PERSON (Steam id, else name), not a seat number, since a newcomer reuses the leaver's seat; the
+  per-player share stays as it was at mission start.
+- **New player** (no co-op save yet): their own game makes fresh rookies (a new co-op profile).
+
 ## Battle sync (host → clients)
+**Built 2026-11-11 (v0.5.0, `coop_battle.lua`, watching only; headless test 42 checks, not yet tried in-game).**
+What was built differs from the plan below in one way: no hand-kept field list. The whole `player` is mirrored generically:
+- Plain fields and nested tables are diffed against what was last sent (floats rounded to 0.01). Lists of tables are
+  diffed per element, keyed by the element's table identity on the host, so a list that shifts (deco trimmed from the
+  front, urb_engine.lua:6171; a dead troop removed) sends `rm`/`add` keys, not everything. A reorder sends the key order.
+- Never sent: camera, `option_*` settings, weather lists (rain/fluff/clouds stay empty on clients), `delayedAction`,
+  `troopBin`, troops' `selected`. Effect lists (particles, topParticles, explosions, text/damage/ui/icon/tip cues,
+  water/mine circles) send new entries once, flat (scalars only; an explosion's `dad` is the whole shooter).
+- One message per tick (20/s, option `syncRate` 10), reliable on channel 1, zlib when over 400 bytes. Full state on
+  battle start and for mid-battle joiners (sent right after a tick so the shared baseline matches).
+- Client: the game's update is replaced while watching. It smooths x/y/`*rotation` of troops, vehicles, neutrals and
+  planes over the measured snap interval, runs the cue updates, buildingsUpdate, updateLight and screenControl
+  (own camera). particleUpdate/topParticleUpdate are NOT run on clients: they also land grenades, drop paratroopers
+  and hurt troops (particlesSystem.lua:6514, 1). A first try ran them in a setfenv sandbox with gameplay functions
+  stubbed; a stub returning nil made the game's code error every frame and froze every flash and tracer (owner's
+  screenshot, 2026-11-11). Now clients move effects with our own looks-only mover (lifetime, drift, spin, drag, fade,
+  grow/shrink, flight along rotationz); what an effect does on landing arrives from the host as its own event.
+  planeUpdate/delayUpdate are never run on clients either. Lesson: never run game code half-disabled on a client.
+- Sounds: `play`/`stop`/`clone` wrapped on the Source methods. The host names Sources by their global (clones inherit),
+  loops get an instance id so `stop` reaches clients. Clients hear only the host's sounds.
+- Each player's own view (2026-11-11, from the owner's tests): roof fading (`fading/roofAlpha/targetRoofAlpha` sent once
+  per building, then local), F9/Tab/F3/F4/R, and a client copy of the game's mouse-over pass in its order: tip
+  bubbles, soldier card (`mouseOverId`), face names, minimap tooltip + click (camera), vehicle card (`mouseOverId2`),
+  roofs, loot tooltips. Not yet: skill/perk tooltips and buttons (need the HUD buttons; with skills), pause overlay.
+  Never run buttonEngine on a client: its top spawns gameplay (boat explosion, air support, urb_engine.lua:44363-44372).
+- Mission-end pages (4, 5, 10, 14, 15) stay synced after the battle with `view {gs, page}` and the page's animation
+  globals (box1..9Timer, play*once, uiFade/dateFade/bgFade/tipText, temp*, mnb2Wave*; clients accept only those
+  name patterns). Friends can't click there: BACK can reset progress or make a new profile (urb_engine.lua:1536-1630).
+  Page 4 has 6 hard-coded soldier slots (drawFiles.lua:3441-3574) with the four grades below (3575-3674): the
+  4x3 mode needs that page redrawn (owner: grades moved right to make room for 12).
+- Client input in battle is blocked except these, own-soldier orders, Esc twice (leave) and Ctrl+F8. All file writes outside `coop/` are dropped
+  while watching; the real `player` comes back on bend, disconnect, leave or quit (before the game's quit-save).
 - **Battle start:** host sends mode/subgame and the static map once (bgPatch, forest, rocks, deco, buildings, road,
   groundType, placeables, lootables, mineField, trench, endLine). Clients install it into their `player` and enter
   `gameState = 0` with the simulation switched off (`runTime0` skipped; their own camera/scroll still runs).
@@ -128,6 +183,19 @@ list while in menus (all vanilla menu code reads slots 1..6), swapped back befor
 - HUD on clients: TP, wave, squad faces from the snapshot.
 
 ## Control (clients → host)
+**Owner's rules (2026-11-11), built in v0.5.0 (`coop_squad.lua`, headless test 25 checks):** up to **3 players**, the squad
+stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 = 12 later). Soldiers belong to players:
+- Number keys 1..n select *your* soldiers in face-bar order (the game picks by `shortcut`, which buttonEngine rewrites
+  every frame from face order, urb_engine.lua:44396-44424; our buttonEngine wrapper renumbers yours 1..n, others 0).
+  7 and box/click selection can't keep someone else's soldier selected on the host.
+- Owner colour: ring under each squad soldier (qm.toml patch before the white selection ring, drawFiles.lua:261)
+  and a frame on each face in the face bar.
+- Face drag (right mouse, swap at main.lua:6908-6912) only between two faces of your own group.
+- A soldier whose player isn't connected counts as the host's.
+- Friends: select on the mirror (selection is never synced), click ground → `move {ids, x, y}` in world coords.
+  The host validates ownership and **replays the click through the game's own love.mousereleased** with only those
+  soldiers selected, `buttons` emptied and prompts off, then restores its own selection and globals. No copy of the
+  game's move rules. Not yet: friends' skills/grenades (same replay with `mousePrompt`), their face bar clicks and drags.
 - Each troop gets `coopSeat` (1 = host). Units a player recruits are theirs; the host's starting squad can be split.
 - Clients select locally on their mirror (selection never touches the host's flags) and send **orders**:
   `move(ids, wx, wy)`, `recruit(type)`, `skill(id, slot)`, `prompt(N, ids, wx, wy)` in **world** coordinates.

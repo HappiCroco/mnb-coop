@@ -15,26 +15,49 @@ profile.settings = { lastAddress = "", shareAddress = "", showKind = "campaign",
 
 -- ---------------------------------------------------------------- settings
 -- Plain "key=value" lines. Never loaded as Lua.
-function profile.loadSettings()
+-- Two copies of the game on one PC (Launch Two Games.bat) share this file, so a
+-- save only writes the settings THIS copy changed, merged into what the file
+-- holds now; it never puts back another copy's old values.
+local fromFile = {} -- what this copy last read from / wrote to the file (defaults count as read)
+for k, v in pairs(profile.settings) do fromFile[k] = v end
+
+local function readFile()
+    local vals = {}
     local ok, text = pcall(love.filesystem.read, SETTINGS_FILE)
-    if not ok or not text then return end
+    if not ok or not text then return vals end
     for line in text:gmatch("[^\r\n]+") do
         local k, v = line:match("^(%w+)=(.*)$")
         if k and profile.settings[k] ~= nil then
             if type(profile.settings[k]) == "number" then
-                profile.settings[k] = tonumber(v) or profile.settings[k]
+                vals[k] = tonumber(v)
             else
-                profile.settings[k] = v
+                vals[k] = v
             end
         end
+    end
+    return vals
+end
+
+function profile.loadSettings()
+    local vals = readFile()
+    for k, v in pairs(vals) do
+        profile.settings[k] = v
+        fromFile[k] = v
     end
 end
 
 function profile.saveSettings()
-    local lines = {}
+    local vals = readFile()
     for k, v in pairs(profile.settings) do
+        if v ~= fromFile[k] then vals[k] = v end -- changed here: ours wins
+    end
+    local lines = {}
+    for k, v in pairs(vals) do
+        profile.settings[k] = v -- and pick up what the other copy changed
+        fromFile[k] = v
         lines[#lines + 1] = k .. "=" .. tostring(v):gsub("[\r\n]", "")
     end
+    table.sort(lines)
     pcall(love.filesystem.createDirectory, "coop")
     pcall(love.filesystem.write, SETTINGS_FILE, table.concat(lines, "\n"))
 end

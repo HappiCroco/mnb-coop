@@ -15,9 +15,9 @@ local profile = require("includes/mods/mnb_coop/coop_profile")
 
 local net = {}
 
-net.VERSION = "0.3.0"          -- co-op protocol; must match on both sides
+net.VERSION = "0.6.0"          -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
-net.MAX_SEATS = 4
+net.MAX_SEATS = 3             -- up to 3 players for now (owner, 2026-11-11); 4 players with 3 soldiers each comes later
 net.SEAT_COLORS = { { 101, 24, 24 }, { 40, 90, 160 }, { 70, 130, 50 }, { 190, 140, 30 } }
 
 net.role = "offline"           -- "offline" | "host" | "client" | "connecting"
@@ -120,6 +120,42 @@ local function broadcast(msg, except)
         if peer ~= except then send(peer, msg) end
     end
 end
+
+-- Battle sync (coop_battle.lua) sends data it has already encoded and packed.
+function net.sendRawTo(seat, data, channel)
+    local peer = seatPeer[seat]
+    if not peer then return end
+    peer:send(data, channel or 0, "reliable")
+    statWindow.msgsOut = statWindow.msgsOut + 1
+end
+
+-- skipSeats: optional set of seats that don't get this one
+function net.broadcastRaw(data, channel, skipSeats)
+    for seat, peer in pairs(seatPeer) do
+        if not (skipSeats and skipSeats[seat]) then
+            peer:send(data, channel or 0, "reliable")
+            statWindow.msgsOut = statWindow.msgsOut + 1
+        end
+    end
+end
+
+-- Client: an order or a roster for the host (coop_squad.lua, coop_campaign.lua).
+function net.sendToHost(msg)
+    if net.role == "client" and server then send(server, msg) end
+end
+
+-- Host: a message for one seat (mission results).
+function net.sendTo(seat, msg)
+    if net.role == "host" then send(seatPeer[seat], msg) end
+end
+
+-- Hooks set by coop_battle.lua / coop_squad.lua:
+--   net.onHostMessage(msg)            client: a message from the host that the lobby doesn't handle
+--   net.onSeatJoined(seat)            host: a player got a seat
+--   net.onReset()                     the session closed (left, kicked, disconnected, new lobby)
+--   net.onClientMessage(seat, msg)    host: an order from a seated player; returns true if understood
+--   net.onSeatLeft(seat)              host: a seated player left or was removed
+--   net.onWelcome()                   client: the host gave us a seat
 
 -- ---------------------------------------------------------------- GUARD
 -- What a stranger who finds the address can do: open a connection and send data.
@@ -277,6 +313,10 @@ local function hostReceive(peer, msg)
         net.status = card.name .. " joined"
         log("seat %d: %s joined", free, card.name)
         lastLobbySent = 0
+        if net.onSeatJoined then
+            local ok, err = pcall(net.onSeatJoined, free)
+            if not ok then print("[mnb_coop] seat joined: " .. tostring(err)) end
+        end
     elseif not seat then
         strike(peer, "message before hello") -- nothing else is accepted before hello
     elseif msg.t == "ready" then
@@ -298,7 +338,10 @@ local function hostReceive(peer, msg)
             strike(peer, "bad avatar")
         end
     else
-        strike(peer, "unknown message")
+        -- battle orders (coop_squad.lua) say whether they understood the message
+        local ok, handled = false, false
+        if net.onClientMessage then ok, handled = pcall(net.onClientMessage, seat, msg) end
+        if not (ok and handled) then strike(peer, "unknown message") end
     end
 end
 
@@ -310,6 +353,10 @@ function hostDisconnect(peer)
     broadcast({ t = "gone", seat = seat })
     net.status = name .. " left"
     lastLobbySent = 0
+    if net.onSeatLeft then
+        local ok, err = pcall(net.onSeatLeft, seat)
+        if not ok then print("[mnb_coop] seat left: " .. tostring(err)) end
+    end
 end
 
 -- ---------------------------------------------------------------- client side
@@ -319,6 +366,10 @@ local function clientReceive(msg)
         net.status = "Connected"
         local bytes = profile.avatarBytes()
         if bytes then send(server, { t = "avatar", data = bytes }) end
+        if net.onWelcome then
+            local ok, err = pcall(net.onWelcome)
+            if not ok then print("[mnb_coop] welcome: " .. tostring(err)) end
+        end
     elseif msg.t == "refuse" then
         net.status = "Refused: " .. tostring(msg.why)
     elseif msg.t == "lobby" and type(msg.seats) == "table" then
@@ -336,6 +387,9 @@ local function clientReceive(msg)
     elseif msg.t == "gone" then
         local seat = tonumber(msg.seat)
         if seat then net.seats[seat], avatarImages[seat] = nil, nil end
+    elseif net.onHostMessage and net.role == "client" then
+        local ok, err = pcall(net.onHostMessage, msg)
+        if not ok then print("[mnb_coop] battle message: " .. tostring(err)) end
     end
 end
 
@@ -355,6 +409,10 @@ local function reset(status)
     net.joinCode, net.blocked = nil, 0
     net.role, net.mySeat, net.seats = "offline", nil, {}
     net.status = status or "Offline"
+    if net.onReset then
+        local ok, err = pcall(net.onReset)
+        if not ok then print("[mnb_coop] reset: " .. tostring(err)) end
+    end
 end
 
 -- requireCode: joiners must give the join code (shared inside the copied address).
@@ -501,7 +559,7 @@ function net.update()
                     end
                 end
             elseif ev.peer == server then
-                local msg = codec.decode(ev.data)
+                local msg = codec.decode(ev.data, codec.HOST_LIMITS) -- battle state is big
                 if type(msg) == "table" and type(msg.t) == "string" then clientReceive(msg) end
             end
         elseif ev.type == "disconnect" then

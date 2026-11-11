@@ -1,24 +1,37 @@
 -- =============================================================================
--- CO-OP CAMPAIGN (host side)
--- The co-op campaign is the game's own campaign, run on a SEPARATE profile:
--- its own save files, its own XP, ranks, squad and progress. The player's real
--- campaign is never read or written while it runs.
+-- CO-OP CAMPAIGN
+-- Every player has their own co-op save on their own PC: the game's campaign on
+-- a SEPARATE profile (own XP, ranks, career, squad). The player's real campaign is
+-- never read or written while it runs.
 --
--- How: while co-op campaign is active, every love.filesystem call that names one
--- of the game's save files is redirected into coop/campaign/. The game's own
--- campaign code then loads and saves the co-op profile without knowing it.
+-- How: while co-op is active, every love.filesystem call that names one of the
+-- game's save files is redirected into coop/campaign/. The game's own code then
+-- loads and saves the co-op profile without knowing it.
 --   enter(): keep the real `player` in memory, switch the redirect on, load the
---            co-op profile (or make a new one), open the campaign screen.
+--            co-op profile (or make a new one with fresh rookies), and show the
+--            game's main menu on it (Career, Squad, Campaign...).
 --   exit():  save the co-op profile, switch the redirect off, put the real
---            `player` back. Happens when the game returns to the main menu, and
---            on quit.
+--            `player` back. Happens on Back from the Multiplayer lobby, and on quit.
 -- Settings (volume, fullscreen, particles...) live in the profile too, so they're
 -- copied into the co-op profile on enter and back to the real one on exit.
+--
+-- ROSTERS (owner's design, 2026-11-11; DESIGN.md "Own rosters"):
+-- squad slots 1..6 of a player's co-op profile ARE that player's roster. On the
+-- Squad screen it can be sorted (right-drag a card onto another). The soldiers a
+-- player brings to a mission are the top of that order: PRIORITY below, top row
+-- first, as many as their share of the 6 (solo 6, duo 3, trio 2).
+--   clients send their top soldiers to the host ("roster"), kept up to date;
+--   the host builds the mission squad from everyone's (arrangeSquad);
+--   after the mission the host sends each player their soldiers back ("results"),
+--   and soldiers who stayed home get half the average XP the fielded ones gained.
+-- A player who leaves mid-mission: their soldiers become NPCs holding position and
+-- nothing that happens to them counts (no results are sent back).
 -- =============================================================================
 local campaign = {}
 
 campaign.active = false
 campaign.DIR = "coop/campaign"
+campaign.profile = nil -- the co-op profile table while active (even while `player` is a battle mirror)
 
 local REDIRECT = {
     ["saveMNB3.lua"] = campaign.DIR .. "/saveMNB3.lua",
@@ -61,63 +74,121 @@ local function serialize(t)
     return nil
 end
 
+local net = require("includes/mods/mnb_coop/coop_net")
+local profile = require("includes/mods/mnb_coop/coop_profile")
+
+local function log(fmt, ...)
+    if net.isOn("debug", false) then print("[mnb_coop] " .. string.format(fmt, ...)) end
+end
+
+-- Runs fn with the global `player` set to p (the game's helpers, like
+-- createAlliedSoldier and giveXp, read the global).
+local function asPlayer(p, fn, ...)
+    local saved = player
+    player = p
+    local ok, a, b = pcall(fn, ...)
+    player = saved
+    if not ok then print("[mnb_coop] " .. tostring(a)) end
+    return a, b
+end
+
 function campaign.hasSave()
     return realFs.getInfo(REDIRECT["saveMNB3.lua"]) ~= nil
 end
 
--- Start or continue the co-op campaign. Returns false (and a reason) if it can't.
+local function readSaveFile()
+    if not realFs.getInfo(REDIRECT["saveMNB3.lua"]) then return nil end
+    local ok, chunk = pcall(realFs.load, REDIRECT["saveMNB3.lua"])
+    if not (ok and type(chunk) == "function") then return nil end
+    local ok2, data = pcall(chunk)
+    if ok2 and type(data) == "table" then return data end
+    return nil
+end
+
+local function writeSaveFile(p)
+    pcall(fs.createDirectory, campaign.DIR)
+    local data = serialize(p)
+    if data then pcall(realFs.write, REDIRECT["saveMNB3.lua"], data) end
+end
+
+-- The co-op profile from disk, or a brand-new one with fresh rookies (the game's
+-- newProfile, which works on the global `player`). `base` gives the startup flags.
+function campaign.loadProfile(base)
+    local p = readSaveFile()
+    local fresh = false
+    if not p then
+        p = asPlayer({}, function()
+            newProfile()
+            return player
+        end)
+        if type(p) ~= "table" then return nil, "could not make a co-op profile" end
+        fresh = true
+    end
+    -- same order as the game's own startup: bloop is set before updateProfile, or
+    -- updateProfile takes the profile for an old one and resets it
+    p.bloop = (type(base) == "table" and base.bloop) or p.bloop or 0
+    local updated = asPlayer(p, function()
+        updateProfile(player)
+        return player -- updateProfile may swap the table
+    end)
+    if type(updated) == "table" then p = updated end
+    p.coopCampaign = 1
+    campaign.normalize(p)
+    return p, fresh
+end
+
+-- Open the co-op profile (any player). Returns false (and a reason) if it can't.
 function campaign.enter()
     if campaign.active then return true end
     if type(player) ~= "table" then return false, "no profile loaded" end
     pcall(fs.createDirectory, campaign.DIR)
+    local p, fresh = campaign.loadProfile(player)
+    if not p then return false, fresh end
     realPlayer = player
     campaign.active = true
-
-    local loaded = nil
-    if realFs.getInfo(REDIRECT["saveMNB3.lua"]) then
-        local ok, chunk = pcall(realFs.load, REDIRECT["saveMNB3.lua"])
-        if ok and type(chunk) == "function" then
-            local ok2, data = pcall(chunk)
-            if ok2 and type(data) == "table" then loaded = data end
-        end
-    end
-    if loaded then
-        player = loaded
-    else
-        player = {}
-        local ok, err = pcall(newProfile, player)
-        if not ok then
-            player, campaign.active = realPlayer, false
-            return false, "could not make a co-op profile: " .. tostring(err)
-        end
-    end
-    -- same order as the game's own startup: bloop is set before updateProfile, or
-    -- updateProfile takes the profile for an old one and resets it
-    player.bloop = realPlayer.bloop or 0
-    pcall(updateProfile, player)
-    copySettings(realPlayer, player)
-    player.coopCampaign = 1
-    player.gameState = 1
+    player = p
+    campaign.profile = p
+    copySettings(realPlayer, p)
+    p.gameState = 1
     campaign.page = 1
-    pcall(campaign.arrangeSquad)
     campaign.save()
-    print("[mnb_coop] co-op campaign " .. (loaded and "continued" or "started") .. ", day " .. tostring(player.dayz))
+    print("[mnb_coop] co-op profile " .. (fresh and "started" or "opened") .. ", day " .. tostring(p.dayz))
     return true
 end
 
-function campaign.save()
-    if not campaign.active then return end
-    local data = serialize(player)
-    if data then pcall(realFs.write, REDIRECT["saveMNB3.lua"], data) end
+-- The game sometimes replaces `player` with a fresh load of the save (the pause
+-- menu's Options does, urb_engine.lua:45029). While co-op is open and this
+-- machine isn't showing a host's battle, the co-op profile IS whatever `player` is.
+function campaign.track()
+    if not campaign.active or type(player) ~= "table" then return end
+    if mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing then return end
+    campaign.profile = player
 end
 
--- Leave the co-op campaign: save it and give the real profile back.
+function campaign.save()
+    campaign.track()
+    if not campaign.active or type(campaign.profile) ~= "table" then return end
+    writeSaveFile(campaign.profile)
+end
+
+-- Runs fn(profile) on this player's co-op profile, open or not, and saves it.
+function campaign.withProfile(fn)
+    campaign.track()
+    local p = campaign.active and campaign.profile or campaign.loadProfile(player)
+    if type(p) ~= "table" then return end
+    asPlayer(p, fn, p)
+    if campaign.active then campaign.save() else writeSaveFile(p) end
+end
+
+-- Leave co-op: save it and give the real profile back.
 function campaign.exit()
     if not campaign.active then return end
+    campaign.track()
     campaign.setPage(1)
     campaign.save()
-    local coopPlayer = player
+    local coopPlayer = campaign.profile or player
     campaign.active = false
+    campaign.profile = nil
     player = realPlayer or player
     copySettings(coopPlayer, player) -- settings changed during co-op carry over
     player.gameState = 1
@@ -138,10 +209,16 @@ function campaign.reset()
     return true
 end
 
--- Called every frame (menu button pass): leaving to the main menu ends co-op campaign.
+-- Called every frame (menu button pass). The co-op profile stays loaded on the
+-- game's main menu (that menu is the co-op hub: Career, Squad, Campaign...); it
+-- ends when the player goes Back from the Multiplayer lobby, or quits.
 function campaign.update()
+    campaign.track()
+    -- results that arrived while watching the battle: apply once back in the menus
+    if campaign.pendingResults and not (mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing) then
+        campaign.applyPendingResults()
+    end
     if not campaign.active then return end
-    if menuPage == 1 then campaign.exit() return end
     if not campaign.onSquadPage() then campaign.setPage(1) end
 end
 
@@ -155,27 +232,41 @@ function campaign.onQuitAfterGameSaved()
 end
 
 -- =============================================================================
--- SQUAD: 3 SOLDIERS PER PLAYER
--- The game keeps the campaign squad in slots 1..6 of player.deployedTroops. In
--- the co-op campaign the squad is slots 1..N, N = 3 per player (a lone host keeps
--- the vanilla 6). Each squad soldier carries:
---   coopSquad = 1, coopOwner = the player's Steam id, coopSeat = lobby seat
--- Soldiers whose player isn't here this session sit out in player.coopBench.
--- qm.toml patches the game's "6" checks to call coopSquadMax() (replacement of
--- the dead, full-squad bonuses, size control, damage scale...).
+-- ROSTER
 -- =============================================================================
-local net = require("includes/mods/mnb_coop/coop_net")
-local profile = require("includes/mods/mnb_coop/coop_profile")
+-- The order soldiers are brought in: the top row of the Squad screen first
+-- (cards 1, 3, 5), then the bottom row (2, 4, 6).
+campaign.PRIORITY = { 1, 3, 5, 2, 4, 6 }
+local PRIORITY = campaign.PRIORITY
 
--- The squad size the game should use right now (6 outside the co-op campaign).
+-- The squad size the game should use right now (6 outside co-op; more only in a
+-- later 4-player mode). qm.toml patches the game's "6" checks to ask this.
 function coopSquadMax()
-    if campaign.active and type(player) == "table" and tonumber(player.coopSquadTarget) then
-        return player.coopSquadTarget
+    local p = campaign.profile
+    if campaign.active and type(p) == "table" and tonumber(p.coopSquadTarget) then
+        return p.coopSquadTarget
     end
     return 6
 end
 
--- Who plays this session: { {id, name, seat}, ... } in seat order.
+-- players in the session right now (1 when not connected)
+function campaign.playersNow()
+    if net.role == "host" or net.role == "client" then return math.max(1, net.playerCount()) end
+    return 1
+end
+
+-- how many of the 6 each player brings
+function campaign.share(players)
+    return math.max(1, math.floor(6 / math.max(1, players or campaign.playersNow())))
+end
+
+function campaign.isGoing(slot, players)
+    local share = campaign.share(players)
+    for k = 1, share do if PRIORITY[k] == slot then return true end end
+    return false
+end
+
+-- Who plays this session (host side): { {id, name, seat}, ... } in seat order.
 function campaign.owners()
     local list = {}
     if net.role == "host" then
@@ -188,89 +279,428 @@ function campaign.owners()
     return list
 end
 
-local function isSquad(t, i, target)
-    if type(t) ~= "table" then return false end
-    if t.coopSquad == 1 then return true end
-    return i <= target and t.faction == "allied" and t.playerControlled == 1 and t.npc ~= 1
+local function newUid()
+    return (profile.steamId() or "local") .. ":" .. os.time() .. ":" .. love.math.random(1, 999999)
 end
 
+-- a fresh rookie, the way the game makes one (needs `player` = the profile)
 local function newSoldier()
     local s = {}
     createAlliedSoldier(s)
     s.perks = { randNbr(21) }
     pcall(assignNextPerk, s)
+    s.coopUid = newUid()
     return s
 end
 
--- Put the right soldiers in slots 1..N for this session. Run in the menus, before a mission.
+local function isAlive(t)
+    return type(t) == "table" and (tonumber(t.health) or 0) > 0 and (tonumber(t.dead) or 0) == 0
+end
+
+-- fields only a mission uses; a soldier going home or abroad loses them
+local BATTLE_TAGS = { "coopSeat", "coopOwner", "coopXpBefore", "coopNew", "coopNpc", "selected" }
+local function untag(s)
+    for _, k in ipairs(BATTLE_TAGS) do s[k] = nil end
+    s.coopSquad = 1
+    return s
+end
+
+-- Deep copy of plain data (soldiers are plain tables), depth-limited.
+local function copyData(v, depth)
+    if type(v) ~= "table" then
+        local tv = type(v)
+        if tv == "number" or tv == "string" or tv == "boolean" then return v end
+        return nil
+    end
+    if (depth or 0) > 6 then return nil end
+    local out = {}
+    for k, x in pairs(v) do
+        local tk = type(k)
+        if tk == "string" or tk == "number" then out[k] = copyData(x, (depth or 0) + 1) end
+    end
+    return out
+end
+campaign.copyData = copyData
+
+-- A soldier received over the network becomes a normal squad soldier: plain data
+-- only, and the fields the game relies on forced to sane values.
+local function sanitize(s)
+    local t = copyData(s, 0) or {}
+    t.faction, t.tag, t.playerControlled, t.npc = "allied", "allied", 1, 0
+    t.health = tonumber(t.health) or 100
+    t.maxHealth = tonumber(t.maxHealth) or 100
+    t.dead = tonumber(t.dead) or 0
+    t.xp = tonumber(t.xp) or 0
+    t.id = tonumber(t.id) or randNbr(9999999999)
+    if type(t.weapon) ~= "table" then t.weapon = {} end
+    if type(t.perks) ~= "table" then t.perks = {} end
+    if type(t.awards) ~= "table" then t.awards = {} end
+    if type(t.coopUid) ~= "string" then t.coopUid = nil end
+    for _, k in ipairs(BATTLE_TAGS) do t[k] = nil end
+    return t
+end
+campaign.sanitize = sanitize
+
+-- Makes squad slots 1..6 of a profile its six roster soldiers, each with a stable
+-- coopUid. Also turns an older co-op save (v0.4: up to 12 soldiers + coopBench)
+-- into a roster: the first six stay, any others are kept aside in coopExtra.
+function campaign.normalize(p)
+    if type(p) ~= "table" then return end
+    local troops = p.deployedTroops
+    if type(troops) ~= "table" then troops = {} p.deployedTroops = troops end
+    local squad = {}
+    for i = #troops, 1, -1 do
+        local t = troops[i]
+        if type(t) == "table" and t.faction == "allied" and t.playerControlled == 1 and t.npc ~= 1 and t.coopNpc ~= 1 then
+            table.insert(squad, 1, table.remove(troops, i))
+        end
+    end
+    for _, s in ipairs(p.coopBench or {}) do squad[#squad + 1] = s end
+    p.coopBench = nil
+    if #squad > 6 then
+        p.coopExtra = p.coopExtra or {}
+        for k = 7, #squad do p.coopExtra[#p.coopExtra + 1] = squad[k] end
+    end
+    for i = 1, 6 do
+        local s = squad[i]
+        if type(s) ~= "table" then s = asPlayer(p, newSoldier) end
+        untag(s)
+        if type(s.coopUid) ~= "string" then s.coopUid = newUid() end
+        table.insert(troops, i, s)
+    end
+    p.coopSquadTarget = 6
+    p.coopSlotSeats = { 1, 1, 1, 1, 1, 1 }
+    p.coopSlotPos = { 1, 2, 3, 4, 5, 6 }
+    p.coopSlotOwners = {}
+end
+
+-- ---------------------------------------------------------------- host: missions
+campaign.friendRosters = {} -- seat -> { steamId, soldiers = { {pos, soldier}, ... } }
+
+-- "roster" from a client: the soldiers they would bring, in their order
+function campaign.onClientMessage(seat, msg)
+    if msg.t ~= "roster" then return false end
+    if type(msg.soldiers) ~= "table" then return true end
+    local list = {}
+    for i = 1, math.min(6, #msg.soldiers) do
+        local e = msg.soldiers[i]
+        local pos = type(e) == "table" and tonumber(e.pos)
+        if pos and pos >= 1 and pos <= 6 and type(e.soldier) == "table" then
+            list[#list + 1] = { pos = math.floor(pos), soldier = sanitize(e.soldier) }
+        end
+    end
+    campaign.friendRosters[seat] = { steamId = net.seats[seat] and net.seats[seat].steamId, soldiers = list }
+    log("seat %d sent %d soldiers", seat, #list)
+    pcall(campaign.fillFreeSlots) -- joined during a mission: in as reinforcements, if a slot is free
+    return true
+end
+
+local function priorityIndex(pos)
+    for k, p in ipairs(PRIORITY) do if p == pos then return k end end
+    return 99
+end
+
+-- Before a mission (host, or alone): the mission squad from everyone's rosters.
 function campaign.arrangeSquad()
     if not campaign.active then return end
+    campaign.track()
+    local p = campaign.profile
+    campaign.settleMission() -- a mission the host quit before settling
     campaign.setPage(1)
-    local troops = player.deployedTroops
-    local oldTarget = tonumber(player.coopSquadTarget) or 6
+    campaign.normalize(p)
+    local troops = p.deployedTroops
+    -- a soldier who died stays on the roster until replaced: a recruit takes his
+    -- place now (the game does the same for the squad at mission start)
+    for i = 1, 6 do
+        if not isAlive(troops[i]) then troops[i] = asPlayer(p, newSoldier) end
+    end
+    local roster = {}
+    for i = 1, 6 do roster[i] = table.remove(troops, 1) end
 
-    -- 1. take every squad soldier out of the list (and off the bench)
-    local pool = {}
-    for i = #troops, 1, -1 do
-        if isSquad(troops[i], i, oldTarget) then table.insert(pool, 1, table.remove(troops, i)) end
+    local seats = {}
+    if net.role == "host" then
+        for seat = 1, net.MAX_SEATS do if net.seats[seat] then seats[#seats + 1] = seat end end
     end
-    for _, s in ipairs(player.coopBench or {}) do pool[#pool + 1] = s end
+    if #seats == 0 then seats = { 1 } end
+    local share = campaign.share(#seats)
 
-    -- 2. give each player present up to `per` of their own soldiers
-    local owners = campaign.owners()
-    local per = (#owners <= 1) and 6 or 3
-    player.coopOwnerNames = player.coopOwnerNames or {}
-    local squad, bench, taken = {}, {}, {}
-    for _, o in ipairs(owners) do
-        player.coopOwnerNames[o.id] = o.name
-        local mine = {}
-        for k, s in ipairs(pool) do
-            if not taken[k] and s.coopOwner == o.id and #mine < per then mine[#mine + 1] = s taken[k] = true end
-        end
-        o.soldiers = mine
+    local usedIds = {}
+    for _, t in ipairs(troops) do if type(t) == "table" and t.id then usedIds[t.id] = true end end
+    local slots, slotSeats, slotPos, slotOwners = {}, {}, {}, {}
+    local function add(s, seat, pos)
+        s.coopSquad, s.coopSeat, s.coopPos = 1, seat, pos
+        s.coopXpBefore = tonumber(s.xp) or 0
+        if not s.id or usedIds[s.id] then s.id = randNbr(9999999999) end
+        usedIds[s.id] = true
+        slots[#slots + 1] = s
+        slotSeats[#slotSeats + 1] = seat
+        slotPos[#slotPos + 1] = pos
+        local sitting = net.seats[seat]
+        slotOwners[#slotOwners + 1] = sitting and (sitting.steamId or sitting.name) or nil
     end
-    -- 3. soldiers nobody owns yet (fresh profile, replacements) fill the gaps
-    for _, o in ipairs(owners) do
-        for k, s in ipairs(pool) do
-            if #o.soldiers >= per then break end
-            if not taken[k] and (s.coopOwner == nil) then o.soldiers[#o.soldiers + 1] = s taken[k] = true end
-        end
-        while #o.soldiers < per do o.soldiers[#o.soldiers + 1] = newSoldier() end
-    end
-    -- 4. everyone else sits out (their player isn't here, or a player had too many)
-    for k, s in ipairs(pool) do if not taken[k] then bench[#bench + 1] = s end end
 
-    local slotOwners = {}
-    for _, o in ipairs(owners) do
-        for _, s in ipairs(o.soldiers) do
-            s.coopSquad, s.coopOwner, s.coopSeat = 1, o.id, o.seat
-            squad[#squad + 1] = s
-            slotOwners[#slotOwners + 1] = o.id
+    -- the host's: the top of its roster; the rest stay home
+    local going = {}
+    for k = 1, share do
+        local pos = PRIORITY[k]
+        going[pos] = true
+        add(roster[pos], 1, pos)
+    end
+    local home = {}
+    for pos = 1, 6 do if not going[pos] then home[pos] = roster[pos] end end
+
+    -- each friend's: the top of the roster they sent
+    local missionSeats = {}
+    for _, seat in ipairs(seats) do
+        missionSeats[seat] = net.seats[seat] and (net.seats[seat].steamId or net.seats[seat].name) or true
+        if seat ~= 1 then
+            local fr = campaign.friendRosters[seat]
+            local list = {}
+            if fr and fr.steamId == (net.seats[seat] and net.seats[seat].steamId) then
+                for _, e in ipairs(fr.soldiers) do
+                    if isAlive(e.soldier) then list[#list + 1] = e end
+                end
+            end
+            table.sort(list, function(a, b) return priorityIndex(a.pos) < priorityIndex(b.pos) end)
+            local n = 0
+            for _, e in ipairs(list) do
+                if n < share then
+                    add(copyData(e.soldier, 0), seat, e.pos)
+                    n = n + 1
+                end
+            end
+            -- a friend whose roster never arrived still gets soldiers for this mission
+            while n < share do
+                local s = asPlayer(p, newSoldier)
+                s.coopNew = 1
+                add(s, seat, nil)
+                n = n + 1
+            end
         end
     end
-    for i, s in ipairs(squad) do table.insert(troops, i, s) end
-    player.coopBench = bench
-    player.coopSquadTarget = #squad
-    player.coopSlotOwners = slotOwners
-    print(string.format("[mnb_coop] squad: %d soldiers for %d player(s), %d sitting out", #squad, #owners, #bench))
+
+    for i = #slots, 1, -1 do table.insert(troops, 1, slots[i]) end
+    p.coopHome = home
+    p.coopSlotSeats, p.coopSlotPos, p.coopSlotOwners = slotSeats, slotPos, slotOwners
+    p.coopSquadTarget = #slots
+    p.coopMission = { seats = missionSeats, share = share } -- the share stays fixed for the whole mission
+    print(string.format("[mnb_coop] mission squad: %d soldiers, %d each for %d player(s)", #slots, share, #seats))
 end
 
--- A soldier the game re-creates in a squad slot (replacement of the dead) is a new
--- table without our tags: give it the slot's owner. Cheap; runs every frame.
+-- After a mission (host): own soldiers back on the roster, friends' soldiers sent
+-- back to them. Runs when the host leaves the mission-end page (and, if the game
+-- was closed there, before the next mission). Safe to call twice.
+function campaign.settleMission()
+    campaign.track()
+    local p = campaign.profile
+    if not campaign.active or type(p) ~= "table" or type(p.coopMission) ~= "table" then return end
+    local troops = p.deployedTroops
+    local k = math.min(tonumber(p.coopSquadTarget) or 6, #troops)
+    local seats, poss = p.coopSlotSeats or {}, p.coopSlotPos or {}
+    local results, back, gains = {}, {}, {}
+    for i = 1, k do
+        local t = troops[i]
+        if type(t) == "table" and t.coopNpc ~= 1 and t.faction == "allied" then
+            local seat, pos = seats[i] or 1, poss[i]
+            if seat == 1 then
+                if pos then
+                    back[pos] = t
+                    if t.coopXpBefore and isAlive(t) then gains[#gains + 1] = (tonumber(t.xp) or 0) - t.coopXpBefore end
+                end
+            else
+                results[seat] = results[seat] or {}
+                results[seat][#results[seat] + 1] = { pos = pos, soldier = t }
+            end
+        end
+    end
+    for i = k, 1, -1 do table.remove(troops, i) end
+    -- soldiers who pulled out with a player who left are gone for good
+    for i = #troops, 1, -1 do
+        if type(troops[i]) == "table" and troops[i].coopNpc == 1 then table.remove(troops, i) end
+    end
+
+    -- the host's roster back in its order; home soldiers get half the average gain
+    local home = p.coopHome or {}
+    local sum = 0
+    for _, g in ipairs(gains) do sum = sum + g end
+    local half = #gains > 0 and math.floor(sum / #gains / 2) or 0
+    for pos = 1, 6 do
+        local s = back[pos] or home[pos]
+        if type(s) ~= "table" then s = asPlayer(p, newSoldier) end
+        if not back[pos] and half >= 1 and isAlive(s) then asPlayer(p, giveXp, s, half) end
+        untag(s)
+        if type(s.coopUid) ~= "string" then s.coopUid = newUid() end
+        table.insert(troops, pos, s)
+    end
+
+    -- friends who are still here (the same person in that seat) get theirs back
+    for seat, list in pairs(results) do
+        local want = p.coopMission.seats and p.coopMission.seats[seat]
+        local s = net.seats[seat]
+        if net.role == "host" and s and (want == true or want == nil or (s.steamId or s.name) == want) then
+            local out = {}
+            for _, e in ipairs(list) do
+                local c = copyData(e.soldier, 0)
+                for _, tag in ipairs(BATTLE_TAGS) do c[tag] = nil end
+                out[#out + 1] = { pos = e.pos, soldier = c }
+            end
+            net.sendTo(seat, { t = "results", soldiers = out, day = p.dayz })
+            log("results to seat %d: %d soldiers", seat, #out)
+        end
+    end
+    p.coopMission, p.coopHome = nil, nil
+    p.coopSquadTarget = 6
+    p.coopSlotSeats = { 1, 1, 1, 1, 1, 1 }
+    p.coopSlotPos = { 1, 2, 3, 4, 5, 6 }
+    p.coopSlotOwners = {}
+    campaign.save()
+    print("[mnb_coop] mission settled: squad back on the rosters")
+end
+
+-- Host: a player left mid-mission (owner's rule, 2026-11-11). Their soldiers go with
+-- them: they walk off the nearest edge (top or bottom) and are gone. Nothing that
+-- happens to them counts (no results go back; their roster stays as it was). Their
+-- slots are free: a player who joins during the mission brings soldiers in there.
+local LEAVE_TIMEOUT = 30 -- seconds; a soldier who can't reach the edge is taken off anyway
+
+function campaign.onSeatLeft(seat)
+    campaign.friendRosters[seat] = nil
+    local p = campaign.profile
+    if not campaign.active or type(p) ~= "table" or type(p.coopMission) ~= "table" then return end
+    if type(player) ~= "table" or player.gameState ~= 0 then return end
+    local now = love.timer.getTime()
+    for _, t in ipairs(p.deployedTroops or {}) do
+        if type(t) == "table" and t.coopSquad == 1 and t.coopSeat == seat then
+            t.coopNpc, t.coopLeaving, t.coopLeftAt, t.coopSquad = 1, 1, now, nil
+            t.selected = false
+            t.coopExitY = ((tonumber(t.y) or 360) < 360) and -200 or 920
+        end
+    end
+    print("[mnb_coop] seat " .. seat .. " left: their soldiers are pulling out")
+end
+
+-- Host, every battle frame: soldiers pulling out keep walking to their edge; once
+-- off the map (or after the timeout) they are taken off: parked far away, out of
+-- the squad, removed by the game with the other NPCs after the mission.
+function campaign.updateLeavers()
+    local p = campaign.profile
+    if not campaign.active or type(p) ~= "table" or type(p.coopMission) ~= "table" then return end
+    if type(player) ~= "table" or player.gameState ~= 0 then return end
+    local now = love.timer.getTime()
+    for _, t in ipairs(p.deployedTroops or {}) do
+        if type(t) == "table" and t.coopLeaving == 1 then
+            local gone = (tonumber(t.y) or 0) < -80 or (tonumber(t.y) or 0) > 800
+                or now - (t.coopLeftAt or now) > LEAVE_TIMEOUT or not isAlive(t)
+            if gone then
+                t.coopLeaving, t.coopGone = nil, 1
+                t.playerControlled, t.npc = 0, 1
+                t.x, t.y, t.targetx, t.targety = -9999, -9999, -9999, -9999
+            else
+                t.targetx, t.targety = t.x, t.coopExitY
+                t.selected = false
+            end
+        end
+    end
+    campaign.fillFreeSlots()
+end
+
+-- Host: a player who joined during the mission brings their soldiers into the
+-- slots a leaver freed: in from the left edge, like the game's reinforcements
+-- (bcChecks.lua:1348-1379: x 50, y 350 +-50, heading for the front).
+function campaign.fillFreeSlots()
+    local p = campaign.profile
+    if not campaign.active or type(p) ~= "table" or type(p.coopMission) ~= "table" then return end
+    if type(player) ~= "table" or player.gameState ~= 0 or net.role ~= "host" then return end
+    local troops, seats, poss = p.deployedTroops, p.coopSlotSeats or {}, p.coopSlotPos or {}
+    p.coopSlotOwners = p.coopSlotOwners or {}
+    local owners = p.coopSlotOwners
+    -- a seat number is reused by whoever joins next: slots belong to a PERSON
+    -- (Steam id, else name), so compare who sits in the seat now
+    local function who(seat)
+        local s = net.seats[seat]
+        return s and (s.steamId or s.name) or nil
+    end
+    local free, inMission = {}, {}
+    for i = 1, tonumber(p.coopSquadTarget) or 6 do
+        local t, s = troops[i], seats[i]
+        if s and s ~= 1 then
+            local here = who(s) ~= nil and who(s) == owners[i]
+            if here then
+                inMission[s] = (inMission[s] or 0) + 1 -- soldiers this person already has out there
+            elseif not (type(t) == "table" and t.coopLeaving == 1) then
+                free[#free + 1] = i
+            end
+        end
+    end
+    if #free == 0 then return end
+    for seat = 2, net.MAX_SEATS do
+        local fr = campaign.friendRosters[seat]
+        local share = tonumber(p.coopMission.share) or campaign.share() -- as at mission start, at most the free slots
+        local already = inMission[seat] or 0
+        if #free > 0 and net.seats[seat] and already < share and fr then
+            -- their roster in order, minus the soldiers already out there
+            local out = {}
+            for i2 = 1, tonumber(p.coopSquadTarget) or 6 do
+                local t2 = troops[i2]
+                if type(t2) == "table" and seats[i2] == seat and owners[i2] == who(seat) and t2.coopPos then out[t2.coopPos] = true end
+            end
+            local list = {}
+            for _, e in ipairs(fr.soldiers) do
+                if isAlive(e.soldier) and not out[e.pos] then list[#list + 1] = e end
+            end
+            table.sort(list, function(a, b) return priorityIndex(a.pos) < priorityIndex(b.pos) end)
+            local usedIds = {}
+            for _, t in ipairs(troops) do if type(t) == "table" and t.id then usedIds[t.id] = true end end
+            local n = already
+            for _, e in ipairs(list) do
+                if n < share and #free > 0 then
+                    local i = table.remove(free, 1)
+                    local old = troops[i]
+                    local s = copyData(e.soldier, 0)
+                    s.coopSquad, s.coopSeat, s.coopPos = 1, seat, e.pos
+                    s.coopXpBefore = tonumber(s.xp) or 0
+                    if not s.id or usedIds[s.id] then s.id = randNbr(9999999999) end
+                    s.x, s.y = 50, 350 + randNbr(100) - 50
+                    s.targetx = type(alliedFrontLine) == "function" and alliedFrontLine() or 300
+                    s.targety = s.y
+                    s.state, s.morale = "idle", math.max(tonumber(s.morale) or 100, 30)
+                    troops[i] = s
+                    if type(old) == "table" then troops[#troops + 1] = old end -- the parked leaver, out of the squad
+                    seats[i], poss[i] = seat, e.pos
+                    owners[i] = who(seat)
+                    n = n + 1
+                end
+            end
+            if n > already then
+                p.coopMission.seats[seat] = who(seat) or true
+                inMission[seat] = n
+                print(string.format("[mnb_coop] seat %d's soldiers come in as reinforcements (%d)", seat, n - already))
+            end
+        end
+    end
+end
+
+-- Control follows the slot (owner's rule): whoever stands in squad slot i belongs to
+-- that slot's player, including a replacement the game puts in a dead soldier's
+-- slot (a new table without our tags). Stamped every frame; cheap. A slot whose
+-- player isn't connected is commanded by the host (coop_squad.ownerOf).
 function campaign.retag()
-    if not campaign.active or type(player) ~= "table" then return end
-    local troops, owners = player.deployedTroops, player.coopSlotOwners
-    if type(troops) ~= "table" or type(owners) ~= "table" then return end
+    local p = campaign.profile
+    if not campaign.active or type(p) ~= "table" or type(p.coopMission) ~= "table" then return end
+    local troops, owners, seats = p.deployedTroops, p.coopSlotOwners or {}, p.coopSlotSeats
+    if type(troops) ~= "table" or type(seats) ~= "table" then return end
+    if campaign.page ~= 1 then return end
     for i = 1, coopSquadMax() do
         local t = troops[i]
-        if type(t) == "table" and t.coopSquad ~= 1 and t.faction == "allied" and t.playerControlled == 1 then
+        if type(t) == "table" and t.faction == "allied" and t.playerControlled == 1 and t.npc ~= 1 and t.coopNpc ~= 1 then
             t.coopSquad, t.coopOwner = 1, owners[i]
+            if seats[i] then t.coopSeat = seats[i] end
         end
     end
 end
 
--- After the game set up the mission: soldiers 7+ stand next to soldiers 1..6 and,
--- on D-Day, get the same perks and starting rifles the game gives 1..6.
+-- After the game set up the mission: soldiers 7+ (later 4-player mode) stand next
+-- to soldiers 1..6 and, on D-Day, get the same perks and rifles the game gives 1..6.
 function campaign.placeExtras(dday)
     if not campaign.active then return end
     local troops = player.deployedTroops
@@ -291,19 +721,173 @@ function campaign.placeExtras(dday)
     end
 end
 
--- ---------------------------------------------------------------- squad screens
--- The game's squad, roster and awards screens draw slots 1..6. A page switch swaps
--- soldiers 1..6 with 7..N in the list, so the second group gets the same screens.
+-- ---------------------------------------------------------------- client: rosters
+-- The top of this player's roster goes to the host (as many as the biggest share a
+-- friend can have: 3). Sent on joining, after sorting, and after results.
+function campaign.sendRoster()
+    if net.role ~= "client" then return end
+    campaign.withProfile(function(p)
+        local list = {}
+        for k = 1, 3 do
+            local pos = PRIORITY[k]
+            local s = p.deployedTroops[pos]
+            if type(s) == "table" then list[#list + 1] = { pos = pos, soldier = copyData(s, 0) } end
+        end
+        net.sendToHost({ t = "roster", soldiers = list })
+        log("sent my top %d soldiers to the host", #list)
+    end)
+end
+
+-- "results" from the host: kept until this machine is back from the battle view.
+function campaign.queueResults(msg)
+    if type(msg.soldiers) ~= "table" then return end
+    campaign.pendingResults = msg
+    if not (mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing) then campaign.applyPendingResults() end
+end
+
+function campaign.applyPendingResults()
+    local msg = campaign.pendingResults
+    campaign.pendingResults = nil
+    if type(msg) ~= "table" then return end
+    campaign.withProfile(function(p)
+        local troops = p.deployedTroops
+        p.cimetery = p.cimetery or {}
+        local fielded, gains = {}, {}
+        for _, e in ipairs(msg.soldiers) do
+            local pos = type(e) == "table" and tonumber(e.pos)
+            if pos and pos >= 1 and pos <= 6 and type(e.soldier) == "table" then
+                pos = math.floor(pos)
+                fielded[pos] = true
+                local old, s = troops[pos], sanitize(e.soldier)
+                -- the soldier who went out was replaced on the field: he fell
+                if isAlive(old) and old.coopUid ~= s.coopUid then
+                    old.dead, old.health = 1, 0
+                    old.dateOfDeath = old.dateOfDeath or msg.day or p.dayz
+                    p.cimetery[#p.cimetery + 1] = old
+                end
+                if isAlive(s) then
+                    if type(old) == "table" and old.coopUid == s.coopUid then
+                        gains[#gains + 1] = (tonumber(s.xp) or 0) - (tonumber(old.xp) or 0)
+                    end
+                    if type(s.coopUid) ~= "string" then s.coopUid = newUid() end
+                    troops[pos] = untag(s)
+                else
+                    -- killed in action: on the memorial; a recruit takes the place
+                    s.dateOfDeath = s.dateOfDeath or msg.day or p.dayz
+                    p.cimetery[#p.cimetery + 1] = s
+                    troops[pos] = newSoldier()
+                end
+            end
+        end
+        local sum = 0
+        for _, g in ipairs(gains) do sum = sum + g end
+        local half = #gains > 0 and math.floor(sum / #gains / 2) or 0
+        if half >= 1 then
+            for pos = 1, 6 do
+                if not fielded[pos] and isAlive(troops[pos]) then pcall(giveXp, troops[pos], half) end
+            end
+        end
+        print(string.format("[mnb_coop] mission results: %d soldiers back, home soldiers +%d XP", #msg.soldiers, half))
+    end)
+    campaign.sendRoster()
+end
+
+-- ---------------------------------------------------------------- squad screen
+-- The game's Squad screen (menuPage 3) shows slots 1..6 as cards: columns at x 50,
+-- 275, 500; rows at y 185 (1, 3, 5) and 430 (2, 4, 6); 200x220 each
+-- (drawFiles.lua:3020-3025). Right-drag a card onto another to swap them (the same
+-- gesture as the battle's face drag). Each card says GOING or HOME.
 campaign.page = 1
 local SQUAD_PAGES = { [3] = true, [4] = true, [5] = true }
+local CARD_X, CARD_Y, CARD_W, CARD_H = { 50, 275, 500 }, { 185, 430 }, 200, 220
 
+local function cardAt(x, y)
+    for c = 1, 3 do
+        for r = 1, 2 do
+            if x >= CARD_X[c] and x <= CARD_X[c] + CARD_W and y >= CARD_Y[r] and y <= CARD_Y[r] + CARD_H then
+                return (c - 1) * 2 + r
+            end
+        end
+    end
+    return nil
+end
+
+local drag = nil
+
+function campaign.squadPress(x, y, button)
+    if not campaign.active or menuPage ~= 3 or button ~= 2 then return false end
+    local slot = cardAt(x, y)
+    if not slot then return false end
+    drag = slot
+    pcall(function() iconSlide:clone():play() end)
+    return true
+end
+
+function campaign.squadRelease(x, y, button)
+    if button ~= 2 or not drag then return false end
+    local from = drag
+    drag = nil
+    if not campaign.active or menuPage ~= 3 then return true end
+    local to = cardAt(x, y)
+    local troops = campaign.profile and campaign.profile.deployedTroops
+    if not to or to == from or type(troops) ~= "table" then
+        pcall(function() iconBad:clone():play() end)
+        return true
+    end
+    troops[from], troops[to] = troops[to], troops[from]
+    if soldierHighLight == from then soldierHighLight = to elseif soldierHighLight == to then soldierHighLight = from end
+    pcall(function() iconGood:clone():play() end)
+    campaign.save()
+    if net.role == "client" then campaign.sendRoster() end
+    return true
+end
+
+function campaign.drawSquadTags()
+    if not campaign.active or menuPage ~= 3 then return end
+    local font = nonoFont or love.graphics.getFont()
+    love.graphics.setFont(font)
+    local players = campaign.playersNow()
+    for c = 1, 3 do
+        for r = 1, 2 do
+            local slot = (c - 1) * 2 + r
+            local going = campaign.isGoing(slot, players)
+            local x, y = CARD_X[c] + 6, CARD_Y[r] + 4
+            love.graphics.setColor(0, 0, 0, 1)
+            love.graphics.print(going and "GOING" or "HOME", x + 1, y + 1)
+            if going then love.graphics.setColor(0.45, 0.8, 0.35, 1) else love.graphics.setColor(0.75, 0.75, 0.75, 1) end
+            love.graphics.print(going and "GOING" or "HOME", x, y)
+        end
+    end
+    local share = campaign.share(players)
+    local hint = "Right-drag a card onto another to swap. You bring " .. share .. (share == 1 and " soldier" or " soldiers") ..
+        " (" .. players .. (players == 1 and " player" or " players") .. "); the rest stay home and get half the XP."
+    love.graphics.setColor(0, 0, 0, 1)
+    love.graphics.print(hint, 51, 656)
+    love.graphics.setColor(0.85, 0.85, 0.85, 1)
+    love.graphics.print(hint, 50, 655)
+    if drag then
+        local s = campaign.profile and campaign.profile.deployedTroops[drag]
+        local mx, my = love.mouse.getPosition()
+        love.graphics.setColor(1, 1, 1, 0.9)
+        love.graphics.print(type(s) == "table" and tostring(s.name) or "?", mx + 12, my)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- ---------------------------------------------------------------- squad screens, 7..12
+-- (later 4-player mode) The game's squad screens draw slots 1..6. A page switch
+-- swaps soldiers 1..6 with 7..N in the list, so the second group gets the same screens.
 function campaign.setPage(page)
-    if page == campaign.page or type(player) ~= "table" or type(player.deployedTroops) ~= "table" then return end
-    local troops, owners = player.deployedTroops, player.coopSlotOwners or {}
+    local p = campaign.profile
+    if page == campaign.page or type(p) ~= "table" or type(p.deployedTroops) ~= "table" then return end
+    local troops = p.deployedTroops
+    local owners, seats, poss = p.coopSlotOwners or {}, p.coopSlotSeats or {}, p.coopSlotPos or {}
     local extra = math.min(6, coopSquadMax() - 6)
     for k = 1, extra do
         troops[k], troops[6 + k] = troops[6 + k], troops[k]
         owners[k], owners[6 + k] = owners[6 + k], owners[k]
+        seats[k], seats[6 + k] = seats[6 + k], seats[k]
+        poss[k], poss[6 + k] = poss[6 + k], poss[k]
     end
     campaign.page = page
 end
@@ -334,8 +918,8 @@ end
 -- name of the player who owns the soldier in slot i (for the squad screens)
 function campaign.slotOwnerName(i)
     local t = type(player) == "table" and player.deployedTroops and player.deployedTroops[i]
-    local id = type(t) == "table" and t.coopOwner
-    return id and player.coopOwnerNames and player.coopOwnerNames[id] or nil
+    local seat = type(t) == "table" and t.coopSeat
+    return seat and net.seats[seat] and net.seats[seat].name or nil
 end
 
 return campaign

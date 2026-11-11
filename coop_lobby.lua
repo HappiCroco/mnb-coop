@@ -213,10 +213,10 @@ function lobby.registerButtons()
     addButton(50, 185, 200, 220, top[1], top[3])
     addButton(50, 430, 200, 220, bottom[1], bottom[3])
     local canStart = net.role == "host" or net.role == "offline"
-    addButton(580, 185, 200, 465, "coopCampaign", canStart
-        and ((campaign.hasSave() and "Continue the co-op campaign" or "Start a new co-op campaign") ..
-             ": the normal campaign on its own save, ranks and squad.\nYour own campaign is not touched.")
-        or "The host starts the co-op campaign")
+    addButton(580, 185, 200, 465, "coopCampaign", (campaign.hasSave() and "Your co-op save" or "Start your co-op save") ..
+        ": the game's menu on its own save. Career, and your Squad: sort who you bring (top row goes first)." ..
+        (canStart and "\nCampaign starts the next mission for everyone." or "\nThe host starts the missions.") ..
+        "\nYour own campaign is not touched.")
     addButton(805, 185, 200, 465, "coopClassic", "Co-op classic battle. Coming in the next step.")
     addButton(1030, 185, 200, 465, "coopOptions", "Co-op settings (port, debug log)")
     if net.role == "host" or net.role == "offline" then
@@ -245,6 +245,7 @@ end
 function coopBackButton()
     click()
     lobby.fieldFocus = false
+    if campaign.active then campaign.exit() end -- leaving the lobby = back to your own save
     menuPage = 1
     mouseOverText = ""
 end
@@ -341,7 +342,7 @@ end
 for i = 1, 4 do _G["coopSeat" .. i .. "Button"] = function() seatClick(i) end end
 
 function coopCampaignButton()
-    if not (net.role == "host" or net.role == "offline") then return end
+    -- anyone opens their own co-op save; only the host (or offline) starts missions there
     click()
     lobby.fieldFocus = false
     local ok, why = campaign.enter()
@@ -350,7 +351,9 @@ function coopCampaignButton()
         return
     end
     mouseOverText = ""
-    menu_campaignButton() -- the game's own campaign button, now on the co-op profile
+    -- the game's own main menu, now on the co-op profile: Career, Squad, Campaign
+    -- and Options all show the co-op save; Multiplayer comes back here
+    menuPage = 1
 end
 function coopClassicButton() end
 
@@ -566,10 +569,18 @@ end
 function lobby.draw()
     if campaign.active and menuPage ~= lobby.page then
         -- a reminder on every campaign screen that this is the co-op profile
-        outlined("CO-OP CAMPAIGN", 30, 14, 400, "left", bigFont, RED)
-        outlined("separate save: your own campaign is untouched", 30, 44, 400, "left", nonoFont, LIGHT)
+        -- one line: "CO-OP CAMPAIGN  |  6 soldiers, 3 each  |  own save, ..." (plain ASCII: game fonts)
         local n = coopSquadMax()
-        outlined("Squad: " .. n .. " soldiers (" .. (n > 6 and "3 per player" or "solo: 6") .. ")", 30, 62, 400, "left", nonoFont, LIGHT)
+        local players = #campaign.owners()
+        local title = "CO-OP CAMPAIGN"
+        local rest = "  |  " .. n .. " soldiers" .. (players > 1 and (", " .. math.floor(n / players) .. " each") or "") ..
+            "  |  own save, your campaign is untouched" .. (menuPage == 1 and "  |  Multiplayer: back to the lobby" or "")
+        if mnbCoop and mnbCoop.noticeText and love.timer.getTime() - (mnbCoop.noticeAt or 0) < 3 then
+            rest = "  |  " .. mnbCoop.noticeText
+        end
+        local font = nonoFont or love.graphics.getFont()
+        outlined(title, 30, 16, 400, "left", font, RED)
+        outlined(rest, 30 + font:getWidth(title), 16, 600, "left", font, LIGHT)
         local pageLabel = campaign.squadPageLabel()
         if pageLabel then
             outlined(pageLabel, 150, 685, 230, "left", bigFont, hovered(150, 686, 230, 30) and RED or LIGHT)
@@ -592,9 +603,8 @@ function lobby.draw()
     local top, bottom = sideTiles()
     drawTile(50, 185, 200, 220, { 75, 210, 150, 115 }, squadIcon1, top[2], 355, top[4])
     drawTile(50, 430, 200, 220, { 75, 455, 150, 115 }, profileIcon1, bottom[2], 600, bottom[4])
-    local canStart = net.role == "host" or net.role == "offline"
-    drawTile(580, 185, 200, 465, { 605, 210, 150, 360 }, campaingIcon1, "CO-OP CAMPAIGN", 590, canStart,
-        canStart and (campaign.hasSave() and "continue" or "new campaign") or "host starts it")
+    drawTile(580, 185, 200, 465, { 605, 210, 150, 360 }, campaingIcon1, "CO-OP CAMPAIGN", 590, true,
+        campaign.hasSave() and "your squad" or "new save")
     drawTile(805, 185, 200, 465, { 830, 210, 150, 360 }, classicIcon1, "CO-OP CLASSIC", 590, false, "next step")
     drawTile(1030, 185, 200, 465, { 1055, 210, 150, 360 }, optionsIcon1, "CO-OP OPTIONS", 600, true)
     drawConnection()

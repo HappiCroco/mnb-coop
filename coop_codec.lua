@@ -29,7 +29,10 @@ local function encodeInto(v, out, depth)
         if v == math.floor(v) and v > -2^53 and v < 2^53 then
             out[#out + 1] = fmt("n%d;", v)
         else
-            out[#out + 1] = fmt("n%.17g;", v)
+            -- shortest text that reads back as the same number (123.45, not 123.45000000000000284)
+            local text = fmt("%.14g", v)
+            if tonumber(text) ~= v then text = fmt("%.17g", v) end
+            out[#out + 1] = "n" .. text .. ";"
         end
     elseif t == "string" then
         out[#out + 1] = "s" .. #v .. ":" .. v
@@ -82,7 +85,7 @@ decodeAt = function(s, pos, depth, budget)
         local lenText
         lenText, pos = readUntil(s, pos, ":")
         local len = tonumber(lenText)
-        if not len or len < 0 or len > MAX_STRING or pos + len - 1 > #s then error("coop codec: bad string") end
+        if not len or len < 0 or len > MAX_STRING or pos + len - 1 > #s or len ~= math.floor(len) then error("coop codec: bad string") end
         return sub(s, pos, pos + len - 1), pos + len
     elseif tag == "t" then
         if depth >= MAX_DEPTH then error("coop codec: table too deep") end
@@ -106,10 +109,18 @@ decodeAt = function(s, pos, depth, budget)
     error("coop codec: unknown tag")
 end
 
+-- Limits for data that comes from the host we chose to join (battle state is big):
+-- still bounded, but far above what the host accepts from strangers.
+codec.HOST_LIMITS = { items = 4000000, string = 64 * 1024 * 1024 }
+
 -- Returns the value, or nil and an error message. Never throws.
-function codec.decode(s)
+-- `limits` (optional): { items = n, string = bytes }; defaults are the strict ones.
+function codec.decode(s, limits)
     if type(s) ~= "string" or #s == 0 then return nil, "empty" end
-    local ok, v, pos = pcall(decodeAt, s, 1, 0, { MAX_ITEMS })
+    local savedString = MAX_STRING
+    if limits and limits.string then MAX_STRING = limits.string end
+    local ok, v, pos = pcall(decodeAt, s, 1, 0, { limits and limits.items or MAX_ITEMS })
+    MAX_STRING = savedString
     if not ok then return nil, v end
     if pos ~= #s + 1 then return nil, "trailing data" end
     return v

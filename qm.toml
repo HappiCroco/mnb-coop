@@ -1,6 +1,6 @@
 # Mud and Blood Co-op. Standalone; GMenu (optional) gives it an options page and a page number.
 [manifest]
-version = "0.4.0"
+version = "0.6.0"
 priority = 80
 
 [[patches]]
@@ -26,6 +26,18 @@ name = "includes/mods/mnb_coop/coop_net"
 source = "coop_campaign.lua"
 before = "main.lua"
 name = "includes/mods/mnb_coop/coop_campaign"
+
+[[patches]]
+[patches.module]
+source = "coop_battle.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_battle"
+
+[[patches]]
+[patches.module]
+source = "coop_squad.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_squad"
 
 [[patches]]
 [patches.module]
@@ -86,9 +98,27 @@ if mnbCoop then mnbCoop.drawMenu() end
 match_indent = true
 times = 1
 
+# Battle: a ring in the owner's seat colour under each co-op squad soldier, drawn
+# in the game's troop loop right before its white selection ring.
+[[patches]]
+[patches.pattern]
+target = "includes/drawFiles.lua"
+pattern = '''
+if(player.deployedTroops[i].selected == true) then
+love.graphics.setColor( love.math.colorFromBytes(255, 255, 255, 50))
+love.graphics.draw( selectionCircle, player.deployedTroops[i].x, player.deployedTroops[i].y, 0, 1 + (selectCircle/10)*
+'''
+position = "before"
+payload = '''
+if mnbCoop and mnbCoop.squad then mnbCoop.squad.drawOwnerRing(soldier) end
+'''
+match_indent = true
+times = 1
+
 # ---------------------------------------------------------------------------
-# Co-op campaign squad: 3 soldiers per player. The game's "6" squad checks ask
-# coopSquadMax() instead; it returns 6 except during the co-op campaign.
+# Co-op campaign squad: the 6 are shared out now; above-6 squads (4 players x 3,
+# later) need these. The game's "6" squad checks ask coopSquadMax() instead; it
+# returns 6 except during a co-op campaign with a bigger squad.
 # ---------------------------------------------------------------------------
 
 # Dead-soldier replacement scans (bcReplacement, ribReplacement, alarmReplacement,

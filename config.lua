@@ -19,6 +19,15 @@ return {
       description = "Hosted lobbies get a code that rides along in COPY ADDRESS. Strangers who find your address can't get in without it.",
     },
     {
+      id = "syncRate",
+      label = "Battle updates per second (host)",
+      type = "cycle",
+      default = 20,
+      options = { 20, 10 },
+      labels = { "20", "10" },
+      description = "How often the host sends the battle to the other players. 10 halves the upload for a slow connection; movement is smoothed either way.",
+    },
+    {
       id = "netStats",
       label = "Show network stats",
       type = "checkbox",

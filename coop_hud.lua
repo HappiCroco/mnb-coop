@@ -60,6 +60,16 @@ function hud.draw()
     rows[#rows + 1] = { string.format("Up   %s/s   (%d msg/s)", kb(s.upRate), math.floor(s.msgsOutRate + 0.5)), 0.85, 0.85, 0.85 }
     rows[#rows + 1] = { string.format("Down %s/s   (%d msg/s)", kb(s.downRate), math.floor(s.msgsInRate + 0.5)), 0.85, 0.85, 0.85 }
     rows[#rows + 1] = { string.format("Total up %s, down %s", kb(s.totalUp), kb(s.totalDown)), 0.65, 0.65, 0.65 }
+    local battle = mnbCoop and mnbCoop.battle
+    if battle and (battle.hostActive or battle.viewing) then
+        local b = battle.stats
+        if battle.hostActive then
+            rows[#rows + 1] = { string.format("Battle: snap %s (raw %s), full %s",
+                kb(b.snapBytes or 0), kb(b.lastRaw or 0), kb(b.fullBytes or 0)), 0.75, 0.85, 1 }
+        else
+            rows[#rows + 1] = { "Battle: watching", 0.75, 0.85, 1 }
+        end
+    end
     if net.role == "host" and (net.blocked or 0) > 0 then
         rows[#rows + 1] = { "Turned away: " .. net.blocked, 0.95, 0.5, 0.4 }
     end
