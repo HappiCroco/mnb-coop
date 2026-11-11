@@ -1,0 +1,6 @@
+# Never commit game files, QM dumps/logs or built zips
+game-dump/
+dump/
+log/
+dist/
+*.zip
