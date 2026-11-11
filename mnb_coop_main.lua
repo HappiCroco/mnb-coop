@@ -20,9 +20,25 @@ local hud = require("includes/mods/mnb_coop/coop_hud")
 local campaign = require("includes/mods/mnb_coop/coop_campaign")
 local battle = require("includes/mods/mnb_coop/coop_battle")
 local squad = require("includes/mods/mnb_coop/coop_squad")
+local defense = require("includes/mods/mnb_coop/coop_defense")
 
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
-    squad = squad, version = net.VERSION }
+    squad = squad, defense = defense, version = net.VERSION }
+
+-- Co-op Classic, defense layout (coop_defense.lua): the game's Classic set-up, wave
+-- maker and German direction helpers, each wrapped; they only differ in a defense battle.
+spawnMNB2Wave = defense.wrapWave(spawnMNB2Wave)
+moveForward = defense.wrapMoveForward(moveForward)
+axisRetreat = defense.wrapRetreat(axisRetreat)
+axisInFront = defense.wrapInFront(axisInFront)
+axisAdvance = defense.wrapAdvance(axisAdvance)
+local coopPreMNB2 = preMNB2Admin
+function preMNB2Admin(...)
+    local result = coopPreMNB2(...)
+    local ok, err = pcall(defense.afterSetup)
+    if not ok then print("[mnb_coop] defense setup: " .. tostring(err)) end
+    return result
+end
 
 -- a client that stops watching lands back in the lobby
 battle.onStopView = function(why)
@@ -39,10 +55,15 @@ end
 local battleHostMessage = net.onHostMessage
 net.onHostMessage = function(msg)
     if msg.t == "results" then return campaign.queueResults(msg) end
+    if msg.t == "prompt" then return squad.onPrompt(msg) end -- my armed skill/item (aiming cursor)
+    if msg.t == "ui" then return squad.onUi(msg) end         -- my HUD menu page after a button
     return battleHostMessage(msg)
 end
 net.onWelcome = function() campaign.sendRoster() end -- my top soldiers to the host
-net.onSeatLeft = function(seat) campaign.onSeatLeft(seat) end
+net.onSeatLeft = function(seat)
+    squad.forgetSeat(seat)
+    campaign.onSeatLeft(seat)
+end
 local battleReset = net.onReset
 net.onReset = function()
     battleReset()
@@ -77,10 +98,14 @@ local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
     if battle.viewing then
+        pcall(defense.aliasSprites) -- the defense radar's pictures
         -- watching: the host runs the battle, this machine only animates the mirror
         local ok, err = pcall(battle.clientUpdate, dt)
         if not ok then print("[mnb_coop] watching: " .. tostring(err)) end
-        if not battle.inDebrief() then pcall(squad.clientHover) end -- the game's soldier card on mouse-over
+        if not battle.inDebrief() then
+            pcall(squad.clientHud)   -- the game's HUD buttons, from this window's camera and menu page
+            pcall(squad.clientHover) -- the game's soldier card and tooltips on mouse-over
+        end
         return
     end
     if campaign.active then
@@ -91,6 +116,8 @@ function love.update(dt, ...)
         local oko, erro = pcall(squad.hostRunOrders) -- friends' orders, before the game's frame
         if not oko then print("[mnb_coop] orders: " .. tostring(erro)) end
     end
+    local okd, errd = pcall(defense.update) -- co-op defense: sides, and the radar
+    if not okd then print("[mnb_coop] defense: " .. tostring(errd)) end
     local result = coopUpdate(dt, ...)
     if campaign.active then
         local okl, errl = pcall(campaign.updateLeavers) -- a leaver's soldiers walk off; newcomers come in
@@ -125,6 +152,8 @@ function menu_classicButton(...)
         mnbCoop.notice("Only the host starts battles")
         return
     end
+    -- the co-op Classic tile arms this; the game's own Classic button doesn't
+    defense.wanted, defense.armed = defense.armed, false
     return coopClassic(...)
 end
 
@@ -141,12 +170,20 @@ function menu_backButton(...)
             menuPage = lobby.getPage()
             mouseOverText = ""
         end
+    elseif defense.wanted and battle.DEBRIEF_PAGES[fromPage] then
+        -- a co-op Classic battle is over: back to the Multiplayer screen
+        defense.wanted, defense.on = false, false
+        if menuPage ~= lobby.getPage() then
+            menuPage = lobby.getPage()
+            mouseOverText = ""
+        end
     end
     return result
 end
 
 -- Battle HUD pass: number keys follow your own soldiers in co-op (coop_squad.lua).
 local coopButtonEngine = buttonEngine
+squad.setGameButtonEngine(coopButtonEngine) -- friends build their HUD buttons with it
 function buttonEngine(...)
     local result = coopButtonEngine(...)
     local ok, err = pcall(squad.hostAfterButtonEngine)
@@ -154,10 +191,19 @@ function buttonEngine(...)
     return result
 end
 
+-- A face click on the host doesn't open a friend's soldier's promotion panel: they choose.
+iconClick = squad.wrapIconClick(iconClick)
+
+-- XP day cap in the co-op campaign (coop_campaign.lua): no farming the easy days.
+giveXp = campaign.wrapGiveXp(giveXp)
+
 local coopPreGame = preGameAdmin
 function preGameAdmin(...)
     local dday = campaign.active and player.gainz == 1 and player.landed == 0
+    -- D-Day hands out new perks and rifles; veterans keep their own
+    local okv, veterans = pcall(function() return dday and campaign.stashVeterans() or nil end)
     local result = coopPreGame(...)
+    if okv and veterans then pcall(campaign.restoreVeterans, veterans) end
     if campaign.active then
         local ok, err = pcall(campaign.placeExtras, dday)
         if not ok then print("[mnb_coop] squad placement: " .. tostring(err)) end
@@ -187,7 +233,39 @@ function love.keypressed(key, ...)
         if key == "r" then pcall(fadeAllRoofs) return end -- the game's R, without its menu reset
         return battle.keypressed(key)
     end
+    if key == "h" and net.role == "host" and squad.active() and type(player) == "table" and player.gameState == 0 then
+        return squad.withOnly(squad.mySeat(), coopKeypressed, key, ...) -- H halts your own soldiers only
+    end
     return coopKeypressed(key, ...)
+end
+
+local coopKeyreleased = love.keyreleased
+function love.keyreleased(key, ...)
+    if battle.viewing then
+        pcall(squad.clientKeyreleased, key)
+        return
+    end
+    if not coopKeyreleased then return end
+    if (key == "lalt" or key == "ralt") and net.role == "host" and squad.active() then
+        return squad.withOwnWaypoints(squad.mySeat(), coopKeyreleased, key, ...) -- friends' waypoints wait for them
+    end
+    return coopKeyreleased(key, ...)
+end
+-- friends' H and Alt release are run through the game's own key handlers
+squad.setGameKeys(coopKeypressed, coopKeyreleased)
+
+-- Pause > Options saves and leaves the battle (urb_engine.lua:45012): not while friends are in it.
+local coopPauseOption = pause_optionButton
+function pause_optionButton(...)
+    if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameState == 0 then
+        -- the game's own battle announcement, and its "can't" sound
+        if not pcall(anounceStuff, "Options are closed while friends are in the battle") then
+            mnbCoop.notice("Options are closed while friends are in the battle")
+        end
+        pcall(function() poop:clone():play() end)
+        return
+    end
+    if coopPauseOption then return coopPauseOption(...) end
 end
 
 local coopDraw = love.draw

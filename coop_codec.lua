@@ -26,7 +26,7 @@ local function encodeInto(v, out, depth)
         out[#out + 1] = v and "T" or "F"
     elseif t == "number" then
         if v ~= v or v == math.huge or v == -math.huge then v = 0 end
-        if v == math.floor(v) and v > -2^53 and v < 2^53 then
+        if v == math.floor(v) and v > -2 ^ 53 and v < 2 ^ 53 then
             out[#out + 1] = fmt("n%d;", v)
         else
             -- shortest text that reads back as the same number (123.45, not 123.45000000000000284)
@@ -72,9 +72,12 @@ end
 decodeAt = function(s, pos, depth, budget)
     local tag = sub(s, pos, pos)
     pos = pos + 1
-    if tag == "N" then return nil, pos
-    elseif tag == "T" then return true, pos
-    elseif tag == "F" then return false, pos
+    if tag == "N" then
+        return nil, pos
+    elseif tag == "T" then
+        return true, pos
+    elseif tag == "F" then
+        return false, pos
     elseif tag == "n" then
         local text
         text, pos = readUntil(s, pos, ";")

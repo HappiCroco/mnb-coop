@@ -33,12 +33,12 @@ local FIELD = { x = 310, y = 248, w = 210, h = 30 }
 -- red links in the connection tile, like DISCORD / WIKI / NEWS / VIDEOS
 local LINK_Y = { 435, 485, 535, 585 }
 
-lobby.page = nil              -- menuPage number of the lobby
-lobby.bottomX = nil           -- where "Multiplayer" sits on the main menu bar
+lobby.page = nil    -- menuPage number of the lobby
+lobby.bottomX = nil -- where "Multiplayer" sits on the main menu bar
 lobby.fieldFocus = false
-lobby.address = nil           -- address typed to JOIN
+lobby.address = nil -- address typed to JOIN
 lobby.lanIp = nil
-lobby.flash = nil             -- short confirmation shown in the frame ("Copied")
+lobby.flash = nil   -- short confirmation shown in the frame ("Copied")
 lobby.flashAt = -10
 
 local function fade() return uiFade or 255 end
@@ -50,8 +50,11 @@ local function outlined(text, x, y, w, align, font, color)
     font = font or bigFont
     -- one-line labels that don't fit step down a font size instead of wrapping
     if not text:find("\n") and font:getWidth(text) > w then
-        if font == bigFont and cardFont and cardFont:getWidth(text) <= w then font = cardFont
-        elseif nonoFont then font = nonoFont end
+        if font == bigFont and cardFont and cardFont:getWidth(text) <= w then
+            font = cardFont
+        elseif nonoFont then
+            font = nonoFont
+        end
     end
     love.graphics.setFont(font)
     love.graphics.setColor(1, 1, 1, 1) -- coloured text is multiplied by the current colour
@@ -127,15 +130,29 @@ function lobby.getPage()
     return lobby.page
 end
 
+-- The co-op page: Multiplayer > CO-OP CAMPAIGN opens it. Campaign, Squad and
+-- Career on the co-op save, and Back to the Multiplayer screen. While co-op is
+-- open, every screen that would go back to the main menu comes here instead.
+lobby.hubPage = nil
+function lobby.getHubPage()
+    if lobby.hubPage then return lobby.hubPage end
+    if GMenu and GMenu.allocatePage then
+        lobby.hubPage = GMenu.allocatePage("mnb_coop", "hub", nil, nil)
+    else
+        lobby.hubPage = 141
+    end
+    return lobby.hubPage
+end
+
 -- ---------------------------------------------------------------- state-dependent pieces
 -- Column 1: { top tile, bottom tile }, each { label, title, tooltip, enabled }
 local function sideTiles()
     if net.role == "offline" then
         return { "coopHost", "HOST", "Open a lobby on UDP port " .. port() .. ". Up to 4 players.", true },
-               { "coopJoin", "JOIN", "Join the host whose address is in the CONNECTION box", true }
+            { "coopJoin", "JOIN", "Join the host whose address is in the CONNECTION box", true }
     elseif net.role == "connecting" then
         return { "coopNothing", "HOST", "", false },
-               { "coopLeave", "CANCEL", "Stop connecting", true }
+            { "coopLeave", "CANCEL", "Stop connecting", true }
     end
     local ready = net.myReady()
     local readyTile = { "coopReady", ready and "UNREADY" or "READY",
@@ -152,19 +169,19 @@ local function links()
         return {
             { "coopCopy", "COPY ADDRESS", "Copy the address above to send it to your friends (Ctrl+C)" },
             (profile.settings.shareAddress or "") == ""
-                and { "coopPaste", "PASTE ADDRESS", "Paste your playit.gg address from the clipboard (Ctrl+V)" }
-                or { "coopLocal", "USE LOCAL ADDRESS", "Go back to your home-network address " .. (lobby.lanIp or "") },
+            and { "coopPaste", "PASTE ADDRESS", "Paste your playit.gg address from the clipboard (Ctrl+V)" }
+            or { "coopLocal", "USE LOCAL ADDRESS", "Go back to your home-network address " .. (lobby.lanIp or "") },
             net.joinCode and { "coopNewCode", "NEW CODE", "Make a new join code. Players already in stay;\nanyone with the old address can't join any more." }
-                or { "coopNothing", "", "" },
+            or { "coopNothing", "", "" },
             { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
-                ",\npaste its address above, then COPY ADDRESS and send it to your friends." },
+            ",\npaste its address above, then COPY ADDRESS and send it to your friends." },
         }
     elseif net.role == "offline" then
         return {
             { "coopPaste", "PASTE ADDRESS", "Paste the host's address from the clipboard (Ctrl+V)" },
-            { "coopClear", "CLEAR", "Empty the address box" },
+            { "coopClear", "CLEAR",         "Empty the address box" },
             { "coopHelp", "HOW TO JOIN?", "Same house: the host's local address (like 192.168.0.10:47913).\n" ..
-                "Online: the host's playit.gg address (like name.playit.gg:12345)." },
+            "Online: the host's playit.gg address (like name.playit.gg:12345)." },
         }
     end
     return {}
@@ -205,6 +222,22 @@ function lobby.registerButtons()
         addButton(lobby.bottomX, 686, 150, 30, "coopOpen", "Play together: host or join a co-op lobby")
         return
     end
+    if campaign.active and menuPage == lobby.getHubPage() then
+        local canStart = net.role == "host" or net.role == "offline"
+        addButton(50, 185, 200, 220, "coopHubCareer", "Your co-op career: ranks, ribbons and records")
+        addButton(50, 430, 200, 220, "coopHubSquad", "Your six soldiers. Right-drag a card onto another to sort:\nthe top row goes on the next mission, the rest stay home.")
+        addButton(275, 185, 200, 465, "coopHubCampaign", canStart
+            and "Brief and start the next mission, for everyone in the lobby"
+            or "The host starts the missions. You'll be pulled in when the battle begins.")
+        addButton(32, 686, 80, 30, "coopHubBack", "Back to the Multiplayer screen")
+        addButton(1060, 686, 170, 30, "coopHubNewWar", lobby.newWarArmed()
+            and "Click again to start a NEW WAR now"
+            or "Start the war over at D-Day: day, sector, career and ribbons reset.\nYour six soldiers come along with their levels. The old war is kept as a backup.")
+        addButton(860, 686, 170, 30, "coopHubFreshStart", lobby.freshArmed()
+            and "Click again to start over with NEW ROOKIES now"
+            or "Full reset: like New war, but your six soldiers are replaced by new rookies.\nThe old war is kept as a backup.")
+        return
+    end
     if menuPage ~= lobby.getPage() then return end
     for i = 1, net.MAX_SEATS do
         addButton(BOX_X + (i - 1) * (BOX + BOX_GAP), BOX_Y, BOX, BOX + 20, "coopSeat" .. i, seatTip(i))
@@ -217,7 +250,9 @@ function lobby.registerButtons()
         ": the game's menu on its own save. Career, and your Squad: sort who you bring (top row goes first)." ..
         (canStart and "\nCampaign starts the next mission for everyone." or "\nThe host starts the missions.") ..
         "\nYour own campaign is not touched.")
-    addButton(805, 185, 200, 465, "coopClassic", "Co-op classic battle. Coming in the next step.")
+    addButton(805, 185, 200, 465, "coopClassic", canStart
+        and "Co-op Classic, DEFENSE: your squads start in the middle around a radar,\nthe Germans come from both sides. Ten of them at the radar and it's over.\nPick a Classic mode next (trench and para modes play as usual).\nThe game's Classic save is used (your Classic rank)."
+        or "The host starts the battle. You'll be pulled in when it begins.")
     addButton(1030, 185, 200, 465, "coopOptions", "Co-op settings (port, debug log)")
     if net.role == "host" or net.role == "offline" then
         addButton(FIELD.x, FIELD.y, FIELD.w, FIELD.h, "coopField", net.role == "host"
@@ -295,7 +330,10 @@ end
 function coopPasteButton()
     click()
     local clip = clipboardAddress()
-    if clip == "" then flash("Clipboard is empty") return end
+    if clip == "" then
+        flash("Clipboard is empty")
+        return
+    end
     setFieldText(clip)
     flash("Pasted")
 end
@@ -351,11 +389,98 @@ function coopCampaignButton()
         return
     end
     mouseOverText = ""
-    -- the game's own main menu, now on the co-op profile: Career, Squad, Campaign
-    -- and Options all show the co-op save; Multiplayer comes back here
-    menuPage = 1
+    menuPage = lobby.getHubPage() -- the co-op page
 end
-function coopClassicButton() end
+
+-- co-op page tiles: the game's own screens, on the co-op save
+function coopHubCareerButton()
+    click()
+    mouseOverText = ""
+    menu_careerButton()
+end
+
+function coopHubSquadButton()
+    click()
+    mouseOverText = ""
+    menu_squadButton()
+end
+
+function coopHubCampaignButton()
+    if not (net.role == "host" or net.role == "offline") then
+        if mnbCoop and mnbCoop.notice then mnbCoop.notice("Only the host starts missions") end
+        return
+    end
+    click()
+    mouseOverText = ""
+    menu_campaignButton()
+end
+
+function coopHubBackButton()
+    click()
+    mouseOverText = ""
+    menuPage = lobby.getPage() -- the Multiplayer screen; Back there leaves co-op
+end
+
+-- New war needs two clicks within 3 seconds
+lobby.newWarAt = nil
+function lobby.newWarArmed()
+    return lobby.newWarAt ~= nil and love.timer.getTime() - lobby.newWarAt < 3
+end
+
+function coopHubNewWarButton()
+    click()
+    if not lobby.newWarArmed() then
+        lobby.newWarAt = love.timer.getTime()
+        return
+    end
+    lobby.newWarAt = nil
+    local ok, why = campaign.newWar()
+    if ok then
+        menuPage = lobby.getHubPage()
+        if mnbCoop and mnbCoop.notice then mnbCoop.notice("New war: day 1, your soldiers came along") end
+    elseif mnbCoop and mnbCoop.notice then
+        mnbCoop.notice("New war: " .. tostring(why))
+    end
+    mouseOverText = ""
+end
+
+-- Fresh start (full reset: new rookies too), also two clicks within 3 seconds
+lobby.freshAt = nil
+function lobby.freshArmed()
+    return lobby.freshAt ~= nil and love.timer.getTime() - lobby.freshAt < 3
+end
+
+function coopHubFreshStartButton()
+    click()
+    if not lobby.freshArmed() then
+        lobby.freshAt = love.timer.getTime()
+        lobby.newWarAt = nil
+        return
+    end
+    lobby.freshAt = nil
+    local ok, why = campaign.newWar(true)
+    if ok then
+        menuPage = lobby.getHubPage()
+        if mnbCoop and mnbCoop.notice then mnbCoop.notice("Fresh start: day 1 with six new rookies") end
+    elseif mnbCoop and mnbCoop.notice then
+        mnbCoop.notice("Fresh start: " .. tostring(why))
+    end
+    mouseOverText = ""
+end
+
+-- Co-op Classic (coop_defense.lua): the game's Classic, with the defense layout
+function coopClassicButton()
+    if not (net.role == "host" or net.role == "offline") then
+        if mnbCoop and mnbCoop.notice then mnbCoop.notice("Only the host starts battles") end
+        return
+    end
+    if campaign.active then pcall(campaign.exit) end -- Classic has its own save
+    click()
+    mouseOverText = ""
+    lobby.fieldFocus = false
+    if mnbCoop and mnbCoop.defense then mnbCoop.defense.armed = true end
+    menu_classicButton()
+end
 
 function coopOptionsButton()
     click()
@@ -410,8 +535,12 @@ function seatCard(i)
         if i ~= 1 then return nil end
         if not lobby.preview then
             local bytes = profile.avatarBytes()
-            lobby.preview = { name = profile.name(), show = profile.showcase(), face = profile.face(),
-                              avatar = profile.imageFromBytes(bytes, "me") }
+            lobby.preview = {
+                name = profile.name(),
+                show = profile.showcase(),
+                face = profile.face(),
+                avatar = profile.imageFromBytes(bytes, "me")
+            }
         end
         return lobby.preview
     end
@@ -566,15 +695,76 @@ local function headerText()
     return "CO-OP, host a lobby or join one"
 end
 
+-- The co-op page: Career and Squad stacked in column 1 (where the main menu has
+-- them), the Campaign tile in column 2, and a briefing panel with your six soldiers.
+local function drawHub()
+    local p = campaign.profile or player
+    love.graphics.setFont(bigFont)
+    love.graphics.setColor(rgba({ 120, 120, 120 }))
+    love.graphics.print("CO-OP CAMPAIGN, day " .. tostring(p.dayz or 1), 30, 130)
+
+    local canStart = net.role == "host" or net.role == "offline"
+    drawTile(50, 185, 200, 220, { 75, 210, 150, 115 }, profileIcon1, "CAREER", 355, true)
+    drawTile(50, 430, 200, 220, { 75, 455, 150, 115 }, squadIcon1, "SQUAD", 600, true, "sort who goes")
+    drawTile(275, 185, 200, 465, { 300, 210, 150, 360 }, campaingIcon1, "CAMPAIGN", 590, canStart,
+        canStart and "next mission" or "host starts it")
+
+    -- briefing panel: who goes on the next mission
+    local x, y, w, h = 500, 185, 730, 465
+    love.graphics.setColor(rgba(PANEL))
+    love.graphics.rectangle("fill", x, y, w, h)
+    love.graphics.setColor(rgba({ 20, 20, 20 }, 235))
+    love.graphics.rectangle("fill", x + 25, y + 25, w - 50, h - 50)
+    love.graphics.setColor(rgba(BLACK))
+    love.graphics.rectangle("line", x + 25, y + 25, w - 50, h - 50)
+    local players = campaign.playersNow()
+    local share = campaign.share(players)
+    outlined("YOUR SQUAD", x + 45, y + 40, 300, "left", bigFont, WHITE)
+    local cap = campaign.levelCap(p.gainz)
+    outlined(players .. (players == 1 and " player" or " players") .. ", you bring " .. share ..
+        "   |   " .. (cap < 11 and ("this day: soldiers can reach level " .. cap) or "no level cap from here on"),
+        x + 45, y + 72, w - 90, "left", nonoFont, LIGHT)
+    local troops = type(p.deployedTroops) == "table" and p.deployedTroops or {}
+    for k, pos in ipairs(campaign.PRIORITY) do
+        local s = troops[pos]
+        local col, row = (k - 1) % 2, math.floor((k - 1) / 2)
+        local rx, ry = x + 45 + col * 330, y + 110 + row * 100
+        if type(s) == "table" then
+            local going = k <= share
+            love.graphics.setColor(rgba(going and { 45, 45, 45 } or { 32, 32, 32 }))
+            love.graphics.rectangle("fill", rx, ry, 310, 84)
+            love.graphics.setColor(1, 1, 1, going and 1 or 0.55)
+            profile.drawFace({ eyes = s.eyes, nose = s.nose, mouth = s.mouth, hair = s.hair }, rx + 8, ry + 8, 68)
+            outlined(tostring(s.name or "?"), rx + 86, ry + 8, 220, "left", cardFont or nonoFont, going and WHITE or DIM)
+            outlined("level " .. tostring(s.level or 1) .. "   " .. tostring(math.floor(tonumber(s.xp) or 0)) .. " XP",
+                rx + 86, ry + 36, 220, "left", nonoFont, LIGHT)
+            outlined(going and "GOING" or "HOME", rx + 86, ry + 58, 220, "left", nonoFont,
+                going and { 115, 205, 90 } or DIM)
+        end
+    end
+    outlined("Back", 50, 685, 100, "left", bigFont, hovered(32, 686, 80, 30) and RED or LIGHT)
+    local armed = lobby.newWarArmed()
+    outlined(armed and "Sure? Click again" or "New war", 1060, 685, 170, "right", bigFont,
+        (armed or hovered(1060, 686, 170, 30)) and RED or DIM)
+    local freshArmed = lobby.freshArmed()
+    outlined(freshArmed and "Sure? Click again" or "Fresh start", 860, 685, 170, "right", bigFont,
+        (freshArmed or hovered(860, 686, 170, 30)) and RED or DIM)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 function lobby.draw()
-    if campaign.active and menuPage ~= lobby.page then
+    if campaign.active and menuPage == lobby.hubPage then
+        local ok, err = pcall(drawHub)
+        if not ok then print("[mnb_coop] co-op page: " .. tostring(err)) end
+    end
+    if campaign.active and menuPage ~= lobby.page and menuPage ~= lobby.hubPage then
         -- a reminder on every campaign screen that this is the co-op profile
         -- one line: "CO-OP CAMPAIGN  |  6 soldiers, 3 each  |  own save, ..." (plain ASCII: game fonts)
         local n = coopSquadMax()
         local players = #campaign.owners()
         local title = "CO-OP CAMPAIGN"
         local rest = "  |  " .. n .. " soldiers" .. (players > 1 and (", " .. math.floor(n / players) .. " each") or "") ..
-            "  |  own save, your campaign is untouched" .. (menuPage == 1 and "  |  Multiplayer: back to the lobby" or "")
+            "  |  own save, your campaign is untouched  |  Back: co-op page"
         if mnbCoop and mnbCoop.noticeText and love.timer.getTime() - (mnbCoop.noticeAt or 0) < 3 then
             rest = "  |  " .. mnbCoop.noticeText
         end
@@ -605,7 +795,7 @@ function lobby.draw()
     drawTile(50, 430, 200, 220, { 75, 455, 150, 115 }, profileIcon1, bottom[2], 600, bottom[4])
     drawTile(580, 185, 200, 465, { 605, 210, 150, 360 }, campaingIcon1, "CO-OP CAMPAIGN", 590, true,
         campaign.hasSave() and "your squad" or "new save")
-    drawTile(805, 185, 200, 465, { 830, 210, 150, 360 }, classicIcon1, "CO-OP CLASSIC", 590, false, "next step")
+    drawTile(805, 185, 200, 465, { 830, 210, 150, 360 }, classicIcon1, "CO-OP CLASSIC", 590, true, "defense")
     drawTile(1030, 185, 200, 465, { 1055, 210, 150, 360 }, optionsIcon1, "CO-OP OPTIONS", 600, true)
     drawConnection()
 

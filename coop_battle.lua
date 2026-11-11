@@ -30,34 +30,66 @@ local net = require("includes/mods/mnb_coop/coop_net")
 
 local battle = {}
 
-battle.viewing = false      -- client: watching the host's battle
-battle.hostActive = false   -- host: sending a battle
+battle.viewing = false    -- client: watching the host's battle
+battle.hostActive = false -- host: sending a battle
 battle.stats = { snapBytes = 0, snapRaw = 0, fullBytes = 0, snaps = 0, sounds = 0 }
 
-local DEL = "\1del"         -- "this field is gone" in a delta
-local MAXD = 6              -- nested table depth that is synced
+local DEL = "\1del" -- "this field is gone" in a delta
+local MAXD = 6      -- nested table depth that is synced
 local floor, abs, pi = math.floor, math.abs, math.pi
 
 -- keys of `player` each machine keeps for itself (camera, settings, local weather)
 local LOCAL = {
-    screenx = true, screeny = true, masterScreenx = true, masterScreeny = true,
-    memorialx = true, memorialy = true, gameState = true,
-    rainParticles = true, fluffBalls = true, clouds = true,
-    fullScreen = true, borderLess = true, brutalityWarn = true,
+    showDirective = true, -- each player's own Classic directive panel (directiveMenuButton)
+    screenx = true,
+    screeny = true,
+    masterScreenx = true,
+    masterScreeny = true,
+    memorialx = true,
+    memorialy = true,
+    gameState = true,
+    rainParticles = true,
+    fluffBalls = true,
+    clouds = true,
+    fullScreen = true,
+    borderLess = true,
+    brutalityWarn = true,
 }
 -- host-only simulation state, never sent (delayed actions run gameplay functions)
 local HOSTONLY = { delayedAction = true, troopBin = true }
 -- effect lists: new entries are sent once and each client runs them itself
 local SPAWN = {
-    particles = true, topParticles = true, explosions = true, textCue = true, damageCue = true,
-    uiCue = true, iconCue = true, tipCue = true, waterCircles = true, mineCircles = true,
+    particles = true,
+    topParticles = true,
+    explosions = true,
+    textCue = true,
+    damageCue = true,
+    uiCue = true,
+    iconCue = true,
+    tipCue = true,
+    waterCircles = true,
+    mineCircles = true,
 }
-local SPAWN_CAP = 2000      -- client: oldest effects are dropped above this
+local SPAWN_CAP = 2000 -- client: oldest effects are dropped above this
 -- lists that are lists of tables even while empty
 local KNOWN_LISTS = {
-    deployedTroops = true, deployedVehicles = true, neutrals = true, planes = true, buildings = true,
-    placeables = true, lootables = true, mineField = true, deco = true, bgPatch = true, forest = true,
-    rocks = true, road = true, leaves = true, groundType = true, losBlockers = true, fire = true,
+    deployedTroops = true,
+    deployedVehicles = true,
+    neutrals = true,
+    planes = true,
+    buildings = true,
+    placeables = true,
+    lootables = true,
+    mineField = true,
+    deco = true,
+    bgPatch = true,
+    forest = true,
+    rocks = true,
+    road = true,
+    leaves = true,
+    groundType = true,
+    losBlockers = true,
+    fire = true,
     xmasLights = true,
 }
 -- moving things: positions and angles are smoothed between snaps
@@ -106,9 +138,17 @@ local function diffTable(base, cur, depth, skip)
             local tv = type(v)
             if tv == "number" then
                 v = q(v)
-                if base[k] ~= v then base[k] = v d = d or {} d[k] = v end
+                if base[k] ~= v then
+                    base[k] = v
+                    d = d or {}
+                    d[k] = v
+                end
             elseif tv == "string" or tv == "boolean" then
-                if base[k] ~= v then base[k] = v d = d or {} d[k] = v end
+                if base[k] ~= v then
+                    base[k] = v
+                    d = d or {}
+                    d[k] = v
+                end
             elseif tv == "table" and depth < MAXD then
                 local b = base[k]
                 if type(b) ~= "table" then
@@ -118,7 +158,10 @@ local function diffTable(base, cur, depth, skip)
                     d[k] = diffTable(b, v, depth + 1) or {}
                 else
                     local sub = diffTable(b, v, depth + 1)
-                    if sub then d = d or {} d[k] = sub end
+                    if sub then
+                        d = d or {}
+                        d[k] = sub
+                    end
                 end
             end
         end
@@ -140,7 +183,10 @@ local function applyDelta(target, d)
             target[k] = nil
         elseif type(v) == "table" then
             local t = target[k]
-            if type(t) ~= "table" then t = {} target[k] = t end
+            if type(t) ~= "table" then
+                t = {}
+                target[k] = t
+            end
             applyDelta(t, v)
         else
             target[k] = v
@@ -175,7 +221,11 @@ local function captureList(lb, cur, fresh)
         local el = cur[i]
         if type(el) == "table" then
             local k = keyOf[el]
-            if not k then nextKey = nextKey + 1 k = nextKey keyOf[el] = k end
+            if not k then
+                nextKey = nextKey + 1
+                k = nextKey
+                keyOf[el] = k
+            end
             n = n + 1
             keys[n] = k
             local be = elems[k]
@@ -198,7 +248,10 @@ local function captureList(lb, cur, fresh)
     local old = lb.order
     local same = not fresh and #old == n
     if same then
-        for i = 1, n do if old[i] ~= keys[i] then same = false break end end
+        for i = 1, n do if old[i] ~= keys[i] then
+                same = false
+                break
+            end end
     end
     if not same then
         d = d or {}
@@ -207,11 +260,17 @@ local function captureList(lb, cur, fresh)
         local rm, kept = {}, {}
         for i = 1, #old do
             local k = old[i]
-            if inNew[k] then kept[#kept + 1] = k else rm[#rm + 1] = k elems[k] = nil end
+            if inNew[k] then kept[#kept + 1] = k else
+                rm[#rm + 1] = k
+                elems[k] = nil
+            end
         end
         local appendOnly = not fresh and #kept <= n
         if appendOnly then
-            for i = 1, #kept do if kept[i] ~= keys[i] then appendOnly = false break end end
+            for i = 1, #kept do if kept[i] ~= keys[i] then
+                    appendOnly = false
+                    break
+                end end
         end
         if appendOnly then
             if #rm > 0 then d.rm = rm end
@@ -258,9 +317,16 @@ local function capture(st)
     for k in pairs(st.mode) do
         local lb = st.lists[k]
         local fresh = false
-        if not lb then lb = { order = {}, elems = {} } st.lists[k] = lb fresh = true end
+        if not lb then
+            lb = { order = {}, elems = {} }
+            st.lists[k] = lb
+            fresh = true
+        end
         local ld = captureList(lb, p[k], fresh)
-        if ld then l = l or {} l[k] = ld end
+        if ld then
+            l = l or {}
+            l[k] = ld
+        end
     end
     msg.l = l
     return msg
@@ -305,6 +371,63 @@ end
 local H = nil -- host battle state
 local C = nil -- client view state
 
+-- Sound distance. The game sets a sound's loudness from how far its source is from
+-- the camera (volumeScale gfx.lua:13, gunScale/stepScale/ambiantScale/exploScale
+-- urb_engine.lua:17285-17364), as in `clone:setVolume(stepScale(dude)/2.3)`. The host
+-- notes the scale call just before a setVolume: where the sound is and the factor on
+-- top; each friend works the loudness out again from their own camera.
+local SCALE_CODE = { volumeScale = "v", gunScale = "g", stepScale = "s", exploScale = "e", ambiantScale = "a" }
+local SCALE_NAME = {}
+for name, code in pairs(SCALE_CODE) do SCALE_NAME[code] = name end
+local lastScale = nil -- the scale call waiting for its setVolume
+local soundPlace = setmetatable({}, { __mode = "k" })
+local DEFAULT_FACTOR = 1 / 2.3 -- the game's usual factor, for a sound silent on the host's camera
+
+for name, code in pairs(SCALE_CODE) do
+    local orig = rawget(_G, name)
+    if type(orig) == "function" then
+        _G[name] = function(a, b, ...)
+            local v = orig(a, b, ...)
+            if H then
+                local x, y
+                if code == "a" then x, y = a, b elseif type(a) == "table" then x, y = a.x, a.y end
+                if type(x) == "number" and type(y) == "number" and type(v) == "number" then
+                    lastScale = { k = code, x = x, y = y, v = v }
+                end
+            end
+            return v
+        end
+    end
+end
+
+-- host: the setVolume right after a scale call belongs to that place
+local function noteVolume(src, vol)
+    local s = lastScale
+    lastScale = nil
+    if not s or type(vol) ~= "number" then
+        soundPlace[src] = nil
+        return
+    end
+    local factor = s.v > 0 and vol / s.v or DEFAULT_FACTOR
+    if factor < 0 or factor > 2 then
+        soundPlace[src] = nil
+        return
+    end
+    soundPlace[src] = { k = s.k, x = s.x, y = s.y, f = factor }
+end
+
+-- client: this machine's loudness for a placed sound, or nil
+local function placedVolume(ev)
+    local fn = SCALE_NAME[ev.k]
+    local x, y, f = tonumber(ev.x), tonumber(ev.y), tonumber(ev.f)
+    if not fn or not x or not y or not f or type(_G[fn]) ~= "function" then return nil end
+    local ok, v
+    if ev.k == "a" then ok, v = pcall(_G[fn], x, y) else ok, v = pcall(_G[fn], { x = x, y = y }) end
+    if not ok or type(v) ~= "number" then return nil end
+    return math.max(0, math.min(1, v * f))
+end
+battle.placedVolume = placedVolume
+
 local function hostNoteSound(src)
     local name = nameOf[src]
     if not name and love.timer.getTime() - lastNameScan > 2 then
@@ -315,6 +438,10 @@ local function hostNoteSound(src)
     local okv, vol = pcall(src.getVolume, src)
     local okp, pitch = pcall(src.getPitch, src)
     local ev = { n = name, v = okv and q(vol) or 1, p = okp and q(pitch) or 1 }
+    local place = soundPlace[src]
+    if place then
+        ev.k, ev.x, ev.y, ev.f = place.k, math.floor(place.x + 0.5), math.floor(place.y + 0.5), q(place.f)
+    end
     local okl, looping = pcall(src.isLooping, src)
     if okl and looping then
         nextInst = nextInst + 1
@@ -333,11 +460,19 @@ local function hookSources()
     local methods = type(mt.__index) == "table" and mt.__index or mt
     rawPlay, rawStop, rawClone = methods.play, methods.stop, methods.clone
     if not (rawPlay and rawStop and rawClone) then return false end
+    local rawSetVolume = methods.setVolume
     methods.play = function(s, ...)
         -- clients only hear the host's sounds, plus their own view keys' clicks
         if battle.viewing and not battle.localSound then return false end
         if H then pcall(hostNoteSound, s) end
+        lastScale = nil
         return rawPlay(s, ...)
+    end
+    if rawSetVolume then
+        methods.setVolume = function(s, v, ...)
+            if H then pcall(noteVolume, s, v) end
+            return rawSetVolume(s, v, ...)
+        end
     end
     methods.stop = function(s, ...)
         if H and instId[s] then
@@ -360,13 +495,17 @@ local function clientPlaySounds(list)
     for _, ev in ipairs(list) do
         if ev.s then
             local c = C.inst[ev.s]
-            if c then pcall(rawStop, c) C.inst[ev.s] = nil end
+            if c then
+                pcall(rawStop, c)
+                C.inst[ev.s] = nil
+            end
         elseif type(ev.n) == "string" then
             local base = rawget(_G, ev.n)
             if type(base) == "userdata" then
                 local ok, c = pcall(rawClone, base)
                 if ok and c then
-                    pcall(c.setVolume, c, tonumber(ev.v) or 1)
+                    -- a placed sound: as loud as it is from this player's own camera
+                    pcall(c.setVolume, c, placedVolume(ev) or tonumber(ev.v) or 1)
                     pcall(c.setPitch, c, math.max(0.01, tonumber(ev.p) or 1))
                     if ev.i then
                         pcall(c.setLooping, c, true)
@@ -425,7 +564,10 @@ local function applyImageGlobals(list)
             local img = imageCache[path]
             if not img then
                 local ok, loaded = pcall(love.graphics.newImage, path)
-                if ok then img = loaded imageCache[path] = img end
+                if ok then
+                    img = loaded
+                    imageCache[path] = img
+                end
             end
             if img then
                 if C.savedGlobals[name] == nil then C.savedGlobals[name] = { v = rawget(_G, name) } end
@@ -529,7 +671,10 @@ local function hostScanSpawns()
                 if type(el) == "table" and not seen[el] then
                     seen[el] = true
                     local pend = H.pend[name]
-                    if not pend then pend = {} H.pend[name] = pend end
+                    if not pend then
+                        pend = {}
+                        H.pend[name] = pend
+                    end
                     if #pend < 400 then pend[#pend + 1] = flatCopy(el) end
                 end
             end
@@ -578,7 +723,10 @@ local function hostTick()
     msg.img = imageGlobals(H.imgSent, false)
     msg.view = viewState()
     if player.gameState ~= 0 then msg.g = debriefGlobals(H.gSent, false) end -- only the mission-end pages need them
-    if next(H.pend) then msg.sp = H.pend H.pend = {} end
+    if next(H.pend) then
+        msg.sp = H.pend
+        H.pend = {}
+    end
     if #H.snd > 0 then
         msg.snd = H.snd
         battle.stats.sounds = battle.stats.sounds + #H.snd
@@ -611,8 +759,11 @@ function battle.hostUpdate(dt)
     local inBattle = player and player.gameState == 0
     -- after a battle, keep going while the host is on a mission-end page
     local inDebrief = H and player and player.gameState ~= 0 and battle.DEBRIEF_PAGES[menuPage]
-    if inBattle and not H then hostStart()
-    elseif not inBattle and not inDebrief and H then hostStop() end
+    if inBattle and not H then
+        hostStart()
+    elseif not inBattle and not inDebrief and H then
+        hostStop()
+    end
     if not H then return end
     hostScanSpawns()
     H.acc = H.acc + dt
@@ -663,7 +814,10 @@ local function applyList(k, ld)
                 -- fields still moving that this snap doesn't touch: finish them
                 if it then
                     for f, p in pairs(it) do
-                        if f ~= "t0" and ed[f] == nil then el[f] = p[2] it[f] = nil end
+                        if f ~= "t0" and ed[f] == nil then
+                            el[f] = p[2]
+                            it[f] = nil
+                        end
                     end
                 end
                 local from
@@ -702,7 +856,10 @@ local function applyList(k, ld)
     end
     if ld.rm then
         local gone = {}
-        for _, key in ipairs(ld.rm) do gone[key] = true st.byKey[key] = nil end
+        for _, key in ipairs(ld.rm) do
+            gone[key] = true
+            st.byKey[key] = nil
+        end
         local o = {}
         for _, key in ipairs(st.order) do if not gone[key] then o[#o + 1] = key end end
         st.order = o
@@ -729,7 +886,10 @@ end
 
 local function applySnap(msg)
     if type(msg.lr) == "table" then
-        for _, k in ipairs(msg.lr) do C.lists[k] = nil player[k] = nil end
+        for _, k in ipairs(msg.lr) do
+            C.lists[k] = nil
+            player[k] = nil
+        end
     end
     if type(msg.s) == "table" then applyDelta(player, msg.s) end
     if type(msg.l) == "table" then
@@ -741,7 +901,10 @@ local function applySnap(msg)
         for name, items in pairs(msg.sp) do
             if SPAWN[name] and type(items) == "table" then
                 local list = player[name]
-                if type(list) ~= "table" then list = {} player[name] = list end
+                if type(list) ~= "table" then
+                    list = {}
+                    player[name] = list
+                end
                 for _, it in ipairs(items) do list[#list + 1] = it end
                 local extra = #list - SPAWN_CAP
                 if extra > 0 then for _ = 1, extra do table.remove(list, 1) end end
@@ -758,6 +921,9 @@ local function startView(msg)
     if not C then
         C = { real = player, inst = {}, savedGlobals = {} }
         pcall(love.audio.stop)
+        mousePrompt, mousePrompter, mousePromptLock = 0, 0, 0 -- armed skills come from the host (squad.onPrompt)
+        specID, specDisplay, skillDisplay, abilityDisplay = -99, 0, 0, 0
+        mnb2MenuDisplay = 0 -- this player's own Classic menu page
     end
     -- the mirror starts from nothing but this machine's own settings and camera,
     -- so nothing of the client's own profile can mix into the host's battle
@@ -797,6 +963,9 @@ function battle.stopView(why)
     buttons = {}
     mouseOverText = ""
     mouseOverId = -99 -- no soldier card left over from the host's battle
+    specID, specDisplay, skillDisplay, abilityDisplay = -99, 0, 0, 0 -- nor a promotion panel
+    mousePrompt, mousePrompter, mousePromptLock = 0, 0, 0             -- nor an armed skill
+    mnb2MenuDisplay = 0                                               -- nor an open Classic menu
     if battle.onStopView then pcall(battle.onStopView, why) end
     log("stopped watching (%s)", tostring(why))
 end
@@ -848,7 +1017,10 @@ local function moveParticles(list, dt)
             local vel, drag = tonumber(p.velocity) or 0, tonumber(p.drag) or 0
             if drag > 0 and vel > 0 then
                 vel = vel - drag * step
-                if vel < 0 then vel = 0 p.spin = 0 end
+                if vel < 0 then
+                    vel = 0
+                    p.spin = 0
+                end
                 p.velocity = vel
             end
             local fade = tonumber(p.fade) or 0
@@ -904,8 +1076,11 @@ function battle.clientUpdate(dt)
         local a = math.min(1, (now - it.t0) / C.interval)
         for f, p in pairs(it) do
             if f ~= "t0" then
-                if type(f) == "string" and f:find("[Rr]otation") then el[f] = lerpAngle(p[1], p[2], a)
-                else el[f] = p[1] + (p[2] - p[1]) * a end
+                if type(f) == "string" and f:find("[Rr]otation") then
+                    el[f] = lerpAngle(p[1], p[2], a)
+                else
+                    el[f] = p[1] + (p[2] - p[1]) * a
+                end
             end
         end
         if a >= 1 then C.interp[el] = nil end
@@ -950,7 +1125,10 @@ end
 -- Each different error is logged once.
 function battle.noteDrawError(err)
     if not C then return end
-    if err == nil then C.drawError = nil return end
+    if err == nil then
+        C.drawError = nil
+        return
+    end
     local first = tostring(err):match("^[^\n]*") or "?"
     C.drawError = first
     C.loggedErrors = C.loggedErrors or {}
@@ -1017,15 +1195,25 @@ net.onHostMessage = function(msg) return battle.onHostMessage(msg) end
 net.onSeatJoined = function(seat) return battle.onSeatJoined(seat) end
 net.onReset = function()
     if C then battle.stopView("disconnected") end
-    if H then H = nil battle.hostActive = false end
+    if H then
+        H = nil
+        battle.hostActive = false
+    end
 end
 
 -- for tests
 battle._test = {
-    capture = capture, newCaptureState = newCaptureState, fullMessage = fullMessage, pack = pack,
-    applySnap = applySnap, startView = startView, DEL = DEL,
-    setClient = function(c) C = c end, getClient = function() return C end,
-    setHost = function(h) H = h end, scanSourceNames = scanSourceNames,
+    capture = capture,
+    newCaptureState = newCaptureState,
+    fullMessage = fullMessage,
+    pack = pack,
+    applySnap = applySnap,
+    startView = startView,
+    DEL = DEL,
+    setClient = function(c) C = c end,
+    getClient = function() return C end,
+    setHost = function(h) H = h end,
+    scanSourceNames = scanSourceNames,
 }
 
 return battle

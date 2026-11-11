@@ -15,29 +15,29 @@ local profile = require("includes/mods/mnb_coop/coop_profile")
 
 local net = {}
 
-net.VERSION = "0.6.0"          -- co-op protocol; must match on both sides
+net.VERSION = "0.9.0" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
-net.MAX_SEATS = 3             -- up to 3 players for now (owner, 2026-11-11); 4 players with 3 soldiers each comes later
+net.MAX_SEATS = 3     -- up to 3 players for now (owner, 2026-11-11); 4 players with 3 soldiers each comes later
 net.SEAT_COLORS = { { 101, 24, 24 }, { 40, 90, 160 }, { 70, 130, 50 }, { 190, 140, 30 } }
 
-net.role = "offline"           -- "offline" | "host" | "client" | "connecting"
+net.role = "offline" -- "offline" | "host" | "client" | "connecting"
 net.status = "Offline"
 net.mySeat = nil
-net.seats = {}                 -- [seat] = { name, steamId, show, face, ready, ping, avatar (Image) }
+net.seats = {} -- [seat] = { name, steamId, show, face, ready, ping, avatar (Image) }
 net.port = net.DEFAULT_PORT
 
 local enet = nil
-local host = nil               -- enet host
-local server = nil             -- client: the peer we connected to
-local peerSeat = {}            -- host: peer -> seat
-local seatPeer = {}            -- host: seat -> peer
-local avatarBytes = {}         -- host: seat -> png bytes, to forward to late joiners
-local avatarImages = {}        -- client: seat -> Image (avatars can arrive before the lobby list)
+local host = nil        -- enet host
+local server = nil      -- client: the peer we connected to
+local peerSeat = {}     -- host: peer -> seat
+local seatPeer = {}     -- host: seat -> peer
+local avatarBytes = {}  -- host: seat -> png bytes, to forward to late joiners
+local avatarImages = {} -- client: seat -> Image (avatars can arrive before the lobby list)
 local lastLobbySent = 0
-local myJoinCode = nil         -- client: the code we join with
+local myJoinCode = nil  -- client: the code we join with
 
-net.joinCode = nil             -- host: code joiners must give (nil = open lobby)
-net.blocked = 0                -- host: connections the guard has thrown out
+net.joinCode = nil      -- host: code joiners must give (nil = open lobby)
+net.blocked = 0         -- host: connections the guard has thrown out
 
 -- A co-op option: modLibrary if it's installed, else GMenu's saved value, else `default`
 -- (the same default as config.lua). Co-op works without modLibrary.
@@ -66,7 +66,10 @@ end
 local function loadEnet()
     if enet then return true end
     local ok, mod = pcall(require, "enet")
-    if ok then enet = mod return true end
+    if ok then
+        enet = mod
+        return true
+    end
     net.status = "Networking (enet) is not available in this game build"
     return false
 end
@@ -163,19 +166,19 @@ end
 -- right join code). Until then, and afterwards too, each one is limited in how
 -- much it may send; junk earns strikes; too much of either and it's cut off.
 local GUARD = {
-    MAX_PEERS = 16,             -- enet slots: room for players plus a few strangers being turned away
-    HELLO_TIMEOUT = 5,          -- seconds to send a valid hello
-    MAX_PACKET = 200 * 1024,    -- an avatar is ~50 KB; nothing legit is bigger
-    MAX_MSGS = 60,              -- per second per connection
-    MAX_BYTES = 400 * 1024,     -- per second per connection
-    MAX_STRIKES = 5,            -- malformed or unexpected messages
+    MAX_PEERS = 16,          -- enet slots: room for players plus a few strangers being turned away
+    HELLO_TIMEOUT = 5,       -- seconds to send a valid hello
+    MAX_PACKET = 200 * 1024, -- an avatar is ~50 KB; nothing legit is bigger
+    MAX_MSGS = 60,           -- per second per connection
+    MAX_BYTES = 400 * 1024,  -- per second per connection
+    MAX_STRIKES = 5,         -- malformed or unexpected messages
 }
 net.GUARD = GUARD
-local guard = {}               -- host: peer -> { joinedAt, strikes, msgs, bytes, window }
-local kickedIds = {}           -- host: steamId -> true, refused for the rest of this lobby
+local guard = {}                               -- host: peer -> { joinedAt, strikes, msgs, bytes, window }
+local kickedIds = {}                           -- host: steamId -> true, refused for the rest of this lobby
 local CODE_CHARS = "ACDEFGHJKMNPQRTUVWXY34679" -- no look-alikes (0/O, 1/I, 5/S, 8/B)
 
-local hostDisconnect -- defined below
+local hostDisconnect                           -- defined below
 
 local function drop(peer, why)
     if peerSeat[peer] then hostDisconnect(peer) end
@@ -275,7 +278,10 @@ end
 local function hostReceive(peer, msg)
     local seat = peerSeat[peer]
     if msg.t == "hello" then
-        if seat then strike(peer, "second hello") return end
+        if seat then
+            strike(peer, "second hello")
+            return
+        end
         if net.joinCode and tostring(msg.code or ""):upper() ~= net.joinCode then
             send(peer, { t = "refuse", why = "Wrong or missing join code (ask the host to COPY ADDRESS again)" })
             peer:disconnect_later()
@@ -429,7 +435,10 @@ function net.hostGame(port, requireCode)
     net.role, net.mySeat = "host", 1
     net.seats[1] = myCard()
     local bytes = profile.avatarBytes()
-    if bytes then avatarBytes[1] = bytes setAvatar(1, bytes) end
+    if bytes then
+        avatarBytes[1] = bytes
+        setAvatar(1, bytes)
+    end
     if requireCode ~= false then net.newJoinCode() end
     net.status = "Hosting on UDP port " .. net.port
     return true
@@ -467,12 +476,18 @@ end
 
 function net.join(text)
     local addr, port, code = net.parseAddress(text)
-    if not addr then net.status = "Type an address, like 192.168.0.10 or name.playit.gg:12345" return false end
+    if not addr then
+        net.status = "Type an address, like 192.168.0.10 or name.playit.gg:12345"
+        return false
+    end
     reset()
     myJoinCode = code
     if not loadEnet() then return false end
     local ok, h = pcall(enet.host_create, nil, 1, 2)
-    if not ok or not h then net.status = "Could not start networking" return false end
+    if not ok or not h then
+        net.status = "Could not start networking"
+        return false
+    end
     host = h
     local ok2, peer = pcall(host.connect, host, addr .. ":" .. port, 2)
     if not ok2 or not peer then
@@ -535,7 +550,10 @@ function net.update()
     if not host then return end
     for _ = 1, 64 do
         local ok, ev = pcall(host.service, host, 0)
-        if not ok then reset("Network error: " .. tostring(ev)) return end
+        if not ok then
+            reset("Network error: " .. tostring(ev))
+            return
+        end
         if not ev then break end
         if ev.type == "connect" then
             if net.role == "connecting" and ev.peer == server then

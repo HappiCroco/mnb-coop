@@ -34,7 +34,10 @@ end
 
 function hud.keypressed(key)
     local ctrl = love.keyboard.isDown("lctrl") or love.keyboard.isDown("rctrl")
-    if key == "f8" and ctrl and net.role ~= "offline" then hud.toggled = not hud.toggled return true end
+    if key == "f8" and ctrl and net.role ~= "offline" then
+        hud.toggled = not hud.toggled
+        return true
+    end
     return false
 end
 

@@ -136,8 +136,12 @@ end
 -- ---------------------------------------------------------------- face
 function profile.face()
     local p = player or {}
-    return { eyes = tonumber(p.eyes) or 1, nose = tonumber(p.nose) or 1,
-             mouth = tonumber(p.mouth) or 1, hair = tonumber(p.hair) or 1 }
+    return {
+        eyes = tonumber(p.eyes) or 1,
+        nose = tonumber(p.nose) or 1,
+        mouth = tonumber(p.mouth) or 1,
+        hair = tonumber(p.hair) or 1
+    }
 end
 
 -- Draws a face (from profile.face(), ours or a remote one) into a size x size box.
@@ -194,7 +198,10 @@ function profile.nextShowcase()
     elseif s.showKind == "ribbon" then
         local nextRib
         for i, n in ipairs(ribs) do
-            if n == s.showRib then nextRib = ribs[i + 1] break end
+            if n == s.showRib then
+                nextRib = ribs[i + 1]
+                break
+            end
         end
         if nextRib then s.showRib = nextRib else s.showKind = "none" end
     else
@@ -206,9 +213,13 @@ end
 function profile.showcaseImage(show)
     if type(show) ~= "table" or type(show.n) ~= "number" then return nil end
     local n = math.floor(show.n)
-    if show.kind == "campaign" then return _G["playerRank" .. n]
-    elseif show.kind == "classic" then return _G["command_" .. n]
-    elseif show.kind == "ribbon" then return _G["rib" .. n] end
+    if show.kind == "campaign" then
+        return _G["playerRank" .. n]
+    elseif show.kind == "classic" then
+        return _G["command_" .. n]
+    elseif show.kind == "ribbon" then
+        return _G["rib" .. n]
+    end
     return nil
 end
 
@@ -216,8 +227,10 @@ function profile.showcaseText(show)
     if type(show) ~= "table" or type(show.n) ~= "number" then return "" end
     local n = math.floor(show.n)
     local ok, text = pcall(function()
-        if show.kind == "campaign" then return "Campaign: " .. rankTell(n)
-        elseif show.kind == "classic" then return "Classic: " .. mnb2RankTell(n)
+        if show.kind == "campaign" then
+            return "Campaign: " .. rankTell(n)
+        elseif show.kind == "classic" then
+            return "Classic: " .. mnb2RankTell(n)
         elseif show.kind == "ribbon" then
             return tostring(_G["ribName_" .. n] or ("Ribbon " .. n)) .. ": " .. tostring(_G["ribDesc_" .. n] or "")
         end

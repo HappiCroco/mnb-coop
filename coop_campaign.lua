@@ -220,6 +220,8 @@ function campaign.update()
     end
     if not campaign.active then return end
     if not campaign.onSquadPage() then campaign.setPage(1) end
+    -- no main menu while co-op is open: every "back to the main menu" lands on the co-op page
+    if menuPage == 1 and mnbCoop and mnbCoop.lobby then menuPage = mnbCoop.lobby.getHubPage() end
 end
 
 -- The game saves on quit; with the redirect on, that save lands in the co-op files.
@@ -298,7 +300,7 @@ local function isAlive(t)
 end
 
 -- fields only a mission uses; a soldier going home or abroad loses them
-local BATTLE_TAGS = { "coopSeat", "coopOwner", "coopXpBefore", "coopNew", "coopNpc", "selected" }
+local BATTLE_TAGS = { "coopSeat", "coopOwner", "coopXpBefore", "coopNew", "coopNpc", "coopCapNoted", "selected" }
 local function untag(s)
     for _, k in ipairs(BATTLE_TAGS) do s[k] = nil end
     s.coopSquad = 1
@@ -332,6 +334,21 @@ local function sanitize(s)
     t.dead = tonumber(t.dead) or 0
     t.xp = tonumber(t.xp) or 0
     t.id = tonumber(t.id) or randNbr(9999999999)
+    -- an edited save can't bring values the game never makes: level tops out at 11
+    -- (giveXp, urb_engine.lua:14694-14730), combat skill starts at 30 and grows slowly
+    local function clamp(k, lo, hi, default)
+        local v = tonumber(t[k]) or default
+        if v < lo then v = lo elseif v > hi then v = hi end
+        t[k] = v
+    end
+    clamp("xp", 0, 10000, 0)
+    clamp("level", 1, 11, 1)
+    clamp("rank", 0, 8, 0)
+    clamp("skill", 0, 150, 30)
+    clamp("maxHealth", 1, 400, 100)
+    clamp("health", -1000, t.maxHealth, t.maxHealth)
+    clamp("maxMorale", 1, 400, 100)
+    clamp("promo", 0, 11, 0)
     if type(t.weapon) ~= "table" then t.weapon = {} end
     if type(t.perks) ~= "table" then t.perks = {} end
     if type(t.awards) ~= "table" then t.awards = {} end
@@ -347,7 +364,10 @@ campaign.sanitize = sanitize
 function campaign.normalize(p)
     if type(p) ~= "table" then return end
     local troops = p.deployedTroops
-    if type(troops) ~= "table" then troops = {} p.deployedTroops = troops end
+    if type(troops) ~= "table" then
+        troops = {}
+        p.deployedTroops = troops
+    end
     local squad = {}
     for i = #troops, 1, -1 do
         local t = troops[i]
@@ -483,7 +503,9 @@ function campaign.arrangeSquad()
     p.coopHome = home
     p.coopSlotSeats, p.coopSlotPos, p.coopSlotOwners = slotSeats, slotPos, slotOwners
     p.coopSquadTarget = #slots
-    p.coopMission = { seats = missionSeats, share = share } -- the share stays fixed for the whole mission
+    -- the share stays fixed for the whole mission; gainz is the mission's own day for the
+    -- XP cap (postMissionAdmin moves gainz on before it gives the journal XP)
+    p.coopMission = { seats = missionSeats, share = share, gainz = tonumber(p.gainz) or 1 }
     print(string.format("[mnb_coop] mission squad: %d soldiers, %d each for %d player(s)", #slots, share, #seats))
 end
 
@@ -544,7 +566,7 @@ function campaign.settleMission()
                 for _, tag in ipairs(BATTLE_TAGS) do c[tag] = nil end
                 out[#out + 1] = { pos = e.pos, soldier = c }
             end
-            net.sendTo(seat, { t = "results", soldiers = out, day = p.dayz })
+            net.sendTo(seat, { t = "results", soldiers = out, day = p.dayz, gainz = p.coopMission.gainz })
             log("results to seat %d: %d soldiers", seat, #out)
         end
     end
@@ -680,6 +702,131 @@ function campaign.fillFreeSlots()
     end
 end
 
+-- =============================================================================
+-- XP DAY CAP (owner's rule, 2026-11-11): no farming the easy days. On the war's
+-- first day (D-Day) soldiers can't get past level 2, on the second past level 4;
+-- from the third day on there is no cap. "Day" = missions won (player.gainz,
+-- which also picks the map). A soldier reaches level L at 10*(L-1) XP (giveXp,
+-- urb_engine.lua:14694-14730), so a cap of L keeps XP below 10*L.
+-- =============================================================================
+campaign.CAPS = { [1] = 2, [2] = 4 }
+
+function campaign.levelCap(gainz)
+    return campaign.CAPS[math.floor(tonumber(gainz) or 1)] or 11
+end
+
+-- the day whose cap applies right now (host / alone): the open mission's, else the save's
+function campaign.currentGainz()
+    local p = campaign.profile
+    if type(p) ~= "table" then return 99 end
+    if type(p.coopMission) == "table" and p.coopMission.gainz then return p.coopMission.gainz end
+    return tonumber(p.gainz) or 1
+end
+
+-- How much of `xp` a soldier may still earn under a cap (0 when he's at it).
+function campaign.cappedXp(dude, xp, cap)
+    if cap >= 11 then return xp end
+    local top = 10 * cap - 0.01
+    local have = tonumber(dude.xp) or 0
+    if have >= top then return 0 end
+    return math.min(xp, top - have)
+end
+
+-- Wraps the game's giveXp (installed from mnb_coop_main). Only in the co-op
+-- campaign; Classic and the single-player campaign are untouched.
+function campaign.wrapGiveXp(realGiveXp)
+    return function(dude, xp, ...)
+        if campaign.active and type(dude) == "table" and dude.faction == "allied" and type(xp) == "number"
+            and type(player) == "table" and player.gameType ~= 1 then
+            local cap = campaign.levelCap(campaign.applyingGainz or campaign.currentGainz())
+            local allowed = campaign.cappedXp(dude, xp, cap)
+            if allowed < xp and dude.coopCapNoted ~= 1 and player.gameState == 0 then
+                dude.coopCapNoted = 1 -- once per soldier per mission
+                pcall(floatyText, dude, "XP capped: level " .. cap .. " on this day")
+            end
+            if allowed <= 0 then return end
+            return realGiveXp(dude, allowed, ...)
+        end
+        return realGiveXp(dude, xp, ...)
+    end
+end
+
+-- =============================================================================
+-- D-DAY KEEPS VETERANS AS THEY ARE
+-- On D-Day the game gives squad slots 1..6 new perks and, on the easier
+-- difficulty, a fresh M1 (preGameAdmin, urb_engine.lua:40220-40283). Fine for
+-- rookies; a veteran joining a friend's D-Day, or landing again in a New war,
+-- would lose his for good. Soldiers who already earned XP keep theirs.
+-- =============================================================================
+function campaign.stashVeterans()
+    if not campaign.active or type(player) ~= "table" then return nil end
+    local stash = {}
+    for i = 1, coopSquadMax() do
+        local t = player.deployedTroops and player.deployedTroops[i]
+        if type(t) == "table" and (tonumber(t.xp) or 0) > 0 then
+            stash[t] = { perks = copyData(t.perks, 0), weapon = copyData(t.weapon, 0) }
+        end
+    end
+    return stash
+end
+
+function campaign.restoreVeterans(stash)
+    if type(stash) ~= "table" then return end
+    for t, kept in pairs(stash) do
+        if type(kept.perks) == "table" then t.perks = kept.perks end
+        if type(kept.weapon) == "table" and next(kept.weapon) then t.weapon = kept.weapon end
+    end
+end
+
+-- =============================================================================
+-- NEW WAR (owner's rule): day, sector, career and ribbons start over; the six
+-- soldiers stay with their levels. The old save is kept as a backup file. Safe
+-- because the new war starts under the day 1 cap again.
+-- freshStart = true: a full reset, the six soldiers are new rookies too.
+-- =============================================================================
+function campaign.newWar(freshStart)
+    if not campaign.active then return false, "open your co-op save first" end
+    campaign.track()
+    local p = campaign.profile
+    if type(p) ~= "table" then return false, "no co-op save" end
+    if type(p.coopMission) == "table" then return false, "finish the mission first" end
+    campaign.normalize(p)
+    local keep = {}
+    if not freshStart then
+        for i = 1, 6 do keep[i] = p.deployedTroops[i] end
+    end
+    -- the war that ends is kept as a backup
+    local data = serialize(p)
+    if data then pcall(realFs.write, REDIRECT["saveMNB3.lua"] .. ".war" .. os.time(), data) end
+    local fresh = asPlayer({}, function()
+        newProfile()
+        return player
+    end)
+    if type(fresh) ~= "table" then return false, "could not start a new war" end
+    fresh.bloop = p.bloop or 0
+    local updated = asPlayer(fresh, function()
+        updateProfile(player)
+        return player
+    end)
+    if type(updated) == "table" then fresh = updated end
+    fresh.coopCampaign = 1
+    copySettings(p, fresh)
+    campaign.normalize(fresh)
+    for i = 1, 6 do
+        if type(keep[i]) == "table" then
+            untag(keep[i])
+            fresh.deployedTroops[i] = keep[i]
+        end
+    end
+    fresh.gameState = 1
+    player = fresh
+    campaign.profile = fresh
+    campaign.save()
+    print(freshStart and "[mnb_coop] fresh start: day 1 with six new rookies"
+        or "[mnb_coop] new war: back to day 1, the six soldiers come along")
+    return true
+end
+
 -- Control follows the slot (owner's rule): whoever stands in squad slot i belongs to
 -- that slot's player, including a replacement the game puts in a dead soldier's
 -- slot (a new table without our tags). Stamped every frame; cheap. A slot whose
@@ -783,9 +930,17 @@ function campaign.applyPendingResults()
         for _, g in ipairs(gains) do sum = sum + g end
         local half = #gains > 0 and math.floor(sum / #gains / 2) or 0
         if half >= 1 then
+            -- home soldiers' half follows the day cap of the host's mission, not this save's day
+            local cap = campaign.levelCap(msg.gainz or 99)
+            campaign.applyingGainz = msg.gainz or 99
             for pos = 1, 6 do
-                if not fielded[pos] and isAlive(troops[pos]) then pcall(giveXp, troops[pos], half) end
+                local s = troops[pos]
+                if not fielded[pos] and isAlive(s) then
+                    local amount = campaign.cappedXp(s, half, cap)
+                    if amount > 0 then pcall(giveXp, s, amount) end
+                end
             end
+            campaign.applyingGainz = nil
         end
         print(string.format("[mnb_coop] mission results: %d soldiers back, home soldiers +%d XP", #msg.soldiers, half))
     end)

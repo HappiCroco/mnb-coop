@@ -138,6 +138,38 @@ Replaces "every friend's soldiers live in the host's save" (that made replacemen
   per-player share stays as it was at mission start.
 - **New player** (no co-op save yet): their own game makes fresh rookies (a new co-op profile).
 
+## Decided: XP day cap and New war (owner, 2026-11-11; BUILT the same day, roster test 58 checks, not tried in-game)
+Code: coop_campaign.lua (levelCap/CAPS, wrapGiveXp installed in mnb_coop_main, mission day in coopMission.gainz
+and in the results, stashVeterans/restoreVeterans around preGameAdmin on D-Day, newWar, sanitize clamps) and
+coop_lobby.lua (cap line on the co-op page, "New war" with a confirm click). Found while building: D-Day gives slots
+1..6 new perks and an M1 (urb_engine.lua:40220-40283), which would strip veterans joining a D-Day; soldiers with XP
+now keep their own.
+Players bring experienced soldiers into other people's games and losing them hurts (the "extraction game" feel,
+also told to URB). The aim is no XP farming: nobody grinds easy days to level 11 before really playing.
+- **Soldiers persist** across wars and across friends' games. That is the point of the roster.
+- **XP stays on the field** (promotions mid-battle are kept), with a **day cap**: day 1 (D-Day) soldiers can't pass
+  level 2, day 2 level 4, day 3 onward no cap (11). Day 1's cap alone kills farming; day 2 is extra. From day 3 the
+  game's own XP per hit already shrinks with level: damage/10/level (urb_engine.lua:17482 close combat, 21980 fire).
+- **Home soldiers** keep half the fielded average XP, capped the same way: gains still need soldiers at risk.
+- **A new friend hosts their own day 1** and veterans join them (no reset needed; veterans just earn nothing there).
+- **New war** (co-op page, confirm click): day, sector, career and ribbons start over; the six soldiers stay with
+  their levels; the old save is kept as a backup file. Safe because the new war starts under the day 1 cap again.
+- Details to confirm when building: "day" = missions won (`player.gainz`, which also picks the map), not calendar
+  days; the host clamps impossible values from friends (xp > 100, level > 11); the co-op page shows the current
+  cap and a "capped" floaty text appears in battle. Open: should the higher difficulty or the Germans' combat skill
+  (6 + 1/2 per sector ahead of the calendar + 15 at the higher difficulty, ai.lua:2746-2753) raise the cap?
+- Build: one wrapper on giveXp (level L is reached at 10*(L-1) XP, so a cap of L keeps xp below 10*L).
+- Dropped: operations-style prestige resets, a 2-mission XP lock (a host can always delete the save, so a
+  restart-only rule is dodged), tracking the highest day reached.
+
+## Idea: co-op operations mode (owner, 2026-11-11; not designed yet, after v0.6 is tested)
+Raids instead of the calendar (owner's reference: Mass Effect multiplayer): an operations board with missions to
+pick, each a place + difficulty + conditions; harder ones unlock with roster XP or cleared operations; no day order;
+soldiers keep XP, KIA stays permanent; mixed-level squads stay the players' choice (shared risk). Levers the game
+already has: the map comes from `player.gainz` (sector/setting ranges, e.g. preGameAdmin's bg choice by gainz),
+difficulty `player.diff`, battle conditions (bcMod*, setNewBc) that also change rewards. postMissionAdmin advances
+gainz/dayz, so an operation would set them before Go and put them back after. Would be a second mode card in the lobby.
+
 ## Battle sync (host → clients)
 **Built 2026-11-11 (v0.5.0, `coop_battle.lua`, watching only; headless test 42 checks, not yet tried in-game).**
 What was built differs from the plan below in one way: no hand-kept field list. The whole `player` is mirrored generically:
@@ -194,8 +226,60 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - A soldier whose player isn't connected counts as the host's.
 - Friends: select on the mirror (selection is never synced), click ground → `move {ids, x, y}` in world coords.
   The host validates ownership and **replays the click through the game's own love.mousereleased** with only those
-  soldiers selected, `buttons` emptied and prompts off, then restores its own selection and globals. No copy of the
-  game's move rules. Not yet: friends' skills/grenades (same replay with `mousePrompt`), their face bar clicks and drags.
+  soldiers selected, `buttons` holding only the found loot and crate buttons, prompts off and `love.mouse` reporting
+  the friend's point, then restores its own selection and globals. No copy of the game's move rules. So a click on
+  loot or a crate picks it up the game's way (lootClick/lootCratez/gunCratez/supplyCratez/cargoCratez).
+- Promotions: each player picks for their own soldiers. Friend clicks own face → the game's panel opens on their
+  mirror (specID/specDisplay/skillDisplay, like iconClick); a choice sends `promo {id, label}`; the host checks owner
+  and the panel's own conditions and runs specClick / perkSelect… Button with specID set, keeping its own panel.
+  The host's iconClick does nothing for a friend's soldier.
+- (v0.7.0) Skills: friend's own face → abilityDisplay panel → `skill {id, n}` → host runs skillClick with specID set.
+  Right click → `move {b=2}` replayed as the game's right-button release (items, howitzer/M20).
+  Anything that arms `mousePrompt` for a friend (aimed skills, medic bag, toolbox, intel) is kept per seat on the host
+  (`seatPrompt`), never left in the globals; the friend gets `prompt {p, who}` (their mirror draws the aiming cursor)
+  and their next left click fires it through the replay. Backspace → `cancel`.
+- (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
+  queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
+  leaves the battle) is refused while friends are in.
+- (v0.7.0) Sound distance: the host notes the gunScale/stepScale/... call before each setVolume (place + factor);
+  friends recompute the loudness from their own camera.
+- (v0.8.0) Face drags for friends: right-drag own face onto own face → `swap {a, b}` → host swaps the two entries.
+- (v0.8.0) HUD buttons for friends (command abilities `playerSkill_`, Classic mnb2 menus, trench buttons,
+  directives, broom). The friend's window runs the game's buttonEngine on the mirror (soundCpt pushed down so no
+  chatter/ambient spawns) to get the buttons and tooltips. Menu pages (mnb2Reinf…mnb2Back, directiveMenu) open
+  locally; `mnb2MenuDisplay` and `player.showDirective` (now LOCAL in the sync) are each player's own. Other
+  buttons → `hud {label, x, y, cx, cy, ids, menu}`; the host whitelists the label, then swaps in the friend's
+  selection, menu page, camera (player.screenx/y) and mouse for one Button.click, so screen and world buttons
+  both land right; prompts go to `seatPrompt`; the friend gets `ui {m}` (their menu page after).
+- (v0.8.0) Classic ownership (owner's earlier choices: TP one shared pool; recruits belong to the recruiter):
+  `squad.active()` is also on in a Classic battle hosted with friends; the starting soldiers are dealt in turn
+  (host first) once per battle (`coopOwner`); soldiers a friend's HUD click brings in get their `coopOwner`; the
+  host keeps the game's Ctrl groups. Not yet: delayed arrivals (paradrops landing later) count as the host's.
+- Kept on purpose: the shared voice-line throttle (spamTimer). Every voice plays on every machine, so one throttle
+  is what keeps the shared soundscape from stacking voices; per-player timers would double the chatter.
+- Not yet: r35/brestCannon crew spot follows only the host's selection.
+
+## Co-op Classic: DEFENSE (owner's design 2026-11-11; built v0.9.0, headless test 26 checks, not yet in-game)
+- CO-OP CLASSIC tile (host/offline) → leaves the co-op campaign save → the game's Classic (its own saveMNB2, the
+  host's Classic rank) → the player picks a Classic mode. Plain modes (0-6, 9) get the defense layout; para (7),
+  trench (8, 10) and special events (99) play as usual. Option `classicDefense` (default on) turns it off.
+- Layout (after preMNB2Admin): squad in a ring around a radar at the map's middle (endLine/2, y 360), camera there.
+  The radar uses its own placeable names `coopRadar`/`coopRadarTop` (pictures = the game's radarBase/radarTop) so
+  the game's radar rules (alliedEw cancelling support, wave-end reveal, capture, destruction) don't touch it.
+- Waves: spawnMNB2Wave wrapped; every other German it makes is mirrored to the left flank (same distance west of the
+  westmost player as the game put him east of the eastmost). `coopSide` "L"/"R" on every German; any German that
+  appears without one (map, paradrop, crews, frontal assault) gets the side he's on. Vehicles all stay right
+  (their AI has hard left-facing rules, ai.lua:3403 and siblings).
+- AI: the Classic branch of axisAI2 (urb_engine.lua:17793) only uses moveForward/axisAdvance/axisInFront/
+  axisRetreat for direction; wrapped so "L" Germans go right, retreat left, and count/advance with their own side.
+- Score: a German within 130 px of the radar, or past its line to the other side, = one miss (the game's
+  `mnb2Miss`, iron crosses on the HUD; 10 = game over, the game's own rule). He's sent back to his side (right:
+  x 12000 like the game's misses; left: x 600). "L" Germans are kept right of x 330 so the game's own x<300 miss
+  never fires for them. Jagers/zombies don't score (as in the game).
+- Ownership: the Classic dealing from v0.8.0 (start soldiers in turn, recruits = recruiter's, TP shared).
+- After the battle, Back on the end page → the Multiplayer screen.
+- Ideas for later: vehicles from the left too (needs the vehicle rotation rules mirrored), a points-lost counter of
+  its own, radar sprite of our own.
 - Each troop gets `coopSeat` (1 = host). Units a player recruits are theirs; the host's starting squad can be split.
 - Clients select locally on their mirror (selection never touches the host's flags) and send **orders**:
   `move(ids, wx, wy)`, `recruit(type)`, `skill(id, slot)`, `prompt(N, ids, wx, wy)` in **world** coordinates.
