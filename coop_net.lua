@@ -1,0 +1,557 @@
+-- =============================================================================
+-- CO-OP NETWORK + LOBBY SESSION
+-- LÖVE's built-in enet (UDP). The host owns the lobby: seats 1-4 (1 = host),
+-- who is ready, and everyone's card data. Clients only ask; the host decides
+-- and broadcasts the result.
+--
+-- Channels: 0 = reliable (lobby, later events and orders), 1 = snapshots (step 2).
+--
+-- The host guards itself (our own free "firewall", see GUARD below): a join code,
+-- a short deadline to say hello, per-connection rate limits, strikes for junk,
+-- and kicks. Anything that fails is dropped before it costs more than a check.
+-- =============================================================================
+local codec = require("includes/mods/mnb_coop/coop_codec")
+local profile = require("includes/mods/mnb_coop/coop_profile")
+
+local net = {}
+
+net.VERSION = "0.3.0"          -- co-op protocol; must match on both sides
+net.DEFAULT_PORT = 47913
+net.MAX_SEATS = 4
+net.SEAT_COLORS = { { 101, 24, 24 }, { 40, 90, 160 }, { 70, 130, 50 }, { 190, 140, 30 } }
+
+net.role = "offline"           -- "offline" | "host" | "client" | "connecting"
+net.status = "Offline"
+net.mySeat = nil
+net.seats = {}                 -- [seat] = { name, steamId, show, face, ready, ping, avatar (Image) }
+net.port = net.DEFAULT_PORT
+
+local enet = nil
+local host = nil               -- enet host
+local server = nil             -- client: the peer we connected to
+local peerSeat = {}            -- host: peer -> seat
+local seatPeer = {}            -- host: seat -> peer
+local avatarBytes = {}         -- host: seat -> png bytes, to forward to late joiners
+local avatarImages = {}        -- client: seat -> Image (avatars can arrive before the lobby list)
+local lastLobbySent = 0
+local myJoinCode = nil         -- client: the code we join with
+
+net.joinCode = nil             -- host: code joiners must give (nil = open lobby)
+net.blocked = 0                -- host: connections the guard has thrown out
+
+-- A co-op option: modLibrary if it's installed, else GMenu's saved value, else `default`
+-- (the same default as config.lua). Co-op works without modLibrary.
+function net.option(id, default)
+    local v
+    if modLibrary and modLibrary.option then
+        v = modLibrary.option("mnb_coop", id)
+    else
+        local gm = rawget(_G, "GMenu")
+        local saved = gm and gm.savedSettings and gm.savedSettings.mnb_coop
+        if saved then v = saved[id] end
+    end
+    if v == nil then return default end
+    return v
+end
+
+function net.isOn(id, default)
+    local v = net.option(id, default)
+    return v == true or v == 1
+end
+
+local function log(fmt, ...)
+    if net.isOn("debug", false) then print("[mnb_coop] " .. string.format(fmt, ...)) end
+end
+
+local function loadEnet()
+    if enet then return true end
+    local ok, mod = pcall(require, "enet")
+    if ok then enet = mod return true end
+    net.status = "Networking (enet) is not available in this game build"
+    return false
+end
+
+-- ---------------------------------------------------------------- stats
+-- Shown by the network stats panel (coop_hud.lua). Rates are per second, measured
+-- over the last full second; byte counts come from enet and include its overhead.
+net.stats = { upRate = 0, downRate = 0, totalUp = 0, totalDown = 0, msgsOutRate = 0, msgsInRate = 0 }
+local statWindow = { at = 0, up = 0, down = 0, msgsOut = 0, msgsIn = 0 }
+
+local function countIn() statWindow.msgsIn = statWindow.msgsIn + 1 end
+
+local function updateStats(h)
+    local now = love.timer.getTime()
+    local s = net.stats
+    s.totalUp, s.totalDown = h:total_sent_data(), h:total_received_data()
+    local dt = now - statWindow.at
+    if dt >= 1 then
+        s.upRate = (s.totalUp - statWindow.up) / dt
+        s.downRate = (s.totalDown - statWindow.down) / dt
+        s.msgsOutRate = statWindow.msgsOut / dt
+        s.msgsInRate = statWindow.msgsIn / dt
+        statWindow.at, statWindow.up, statWindow.down, statWindow.msgsOut, statWindow.msgsIn = now, s.totalUp, s.totalDown, 0, 0
+    end
+end
+
+-- Ping (round trip, ms) per seat as this machine sees it: the host measures every
+-- player, a client only measures the host (seat 1).
+function net.pings()
+    local out = {}
+    if net.role == "host" then
+        for seat, peer in pairs(seatPeer) do out[seat] = { avg = peer:round_trip_time(), last = peer:last_round_trip_time() } end
+    elseif server and net.role == "client" then
+        out[1] = { avg = server:round_trip_time(), last = server:last_round_trip_time() }
+    end
+    return out
+end
+
+-- ---------------------------------------------------------------- sending
+local function send(peer, msg, channel)
+    if not peer then return end
+    local ok, data = pcall(codec.encode, msg)
+    if ok then
+        peer:send(data, channel or 0, "reliable")
+        statWindow.msgsOut = statWindow.msgsOut + 1
+    end
+end
+
+local function broadcast(msg, except)
+    for seat, peer in pairs(seatPeer) do
+        if peer ~= except then send(peer, msg) end
+    end
+end
+
+-- ---------------------------------------------------------------- GUARD
+-- What a stranger who finds the address can do: open a connection and send data.
+-- Every connection gets a few seconds to prove it's a co-op player (right version,
+-- right join code). Until then, and afterwards too, each one is limited in how
+-- much it may send; junk earns strikes; too much of either and it's cut off.
+local GUARD = {
+    MAX_PEERS = 16,             -- enet slots: room for players plus a few strangers being turned away
+    HELLO_TIMEOUT = 5,          -- seconds to send a valid hello
+    MAX_PACKET = 200 * 1024,    -- an avatar is ~50 KB; nothing legit is bigger
+    MAX_MSGS = 60,              -- per second per connection
+    MAX_BYTES = 400 * 1024,     -- per second per connection
+    MAX_STRIKES = 5,            -- malformed or unexpected messages
+}
+net.GUARD = GUARD
+local guard = {}               -- host: peer -> { joinedAt, strikes, msgs, bytes, window }
+local kickedIds = {}           -- host: steamId -> true, refused for the rest of this lobby
+local CODE_CHARS = "ACDEFGHJKMNPQRTUVWXY34679" -- no look-alikes (0/O, 1/I, 5/S, 8/B)
+
+local hostDisconnect -- defined below
+
+local function drop(peer, why)
+    if peerSeat[peer] then hostDisconnect(peer) end
+    guard[peer] = nil
+    pcall(peer.disconnect_now, peer)
+    net.blocked = net.blocked + 1
+    log("dropped a connection: %s", why)
+end
+
+local function strike(peer, why)
+    local g = guard[peer]
+    if not g then return end
+    g.strikes = g.strikes + 1
+    if g.strikes >= GUARD.MAX_STRIKES then drop(peer, "too much junk (" .. why .. ")") end
+end
+
+-- true if this packet may be looked at
+local function admit(peer, size)
+    local g = guard[peer]
+    if not g then return false end
+    local now = love.timer.getTime()
+    if now - g.window >= 1 then g.window, g.msgs, g.bytes = now, 0, 0 end
+    g.msgs, g.bytes = g.msgs + 1, g.bytes + size
+    if g.msgs > GUARD.MAX_MSGS or g.bytes > GUARD.MAX_BYTES then
+        drop(peer, "flooding")
+        return false
+    end
+    if size > GUARD.MAX_PACKET then
+        strike(peer, "oversized packet")
+        return false
+    end
+    return true
+end
+
+function net.newJoinCode()
+    local code = {}
+    for i = 1, 5 do
+        local n = love.math.random(1, #CODE_CHARS)
+        code[i] = CODE_CHARS:sub(n, n)
+    end
+    net.joinCode = table.concat(code)
+    return net.joinCode
+end
+
+-- ---------------------------------------------------------------- my card
+local function myCard()
+    return {
+        name = profile.name(),
+        steamId = profile.steamId(),
+        show = profile.showcase(),
+        face = profile.face(),
+        ready = false,
+    }
+end
+
+local function cleanCard(c)
+    -- a remote card: keep only the fields we know, with the types we expect
+    if type(c) ~= "table" then return nil end
+    local out = {}
+    out.name = type(c.name) == "string" and c.name:sub(1, 32) or "Soldier"
+    out.steamId = type(c.steamId) == "string" and c.steamId:match("^%d+$") and c.steamId or nil
+    out.show = type(c.show) == "table" and { kind = tostring(c.show.kind or "none"):sub(1, 10), n = tonumber(c.show.n) } or { kind = "none" }
+    local f = type(c.face) == "table" and c.face or {}
+    out.face = { eyes = tonumber(f.eyes) or 1, nose = tonumber(f.nose) or 1, mouth = tonumber(f.mouth) or 1, hair = tonumber(f.hair) or 1 }
+    out.ready = c.ready == true
+    out.ping = tonumber(c.ping)
+    return out
+end
+
+-- lobby view sent to clients: cards without the avatar images
+local function lobbyView()
+    local seats = {}
+    for i = 1, net.MAX_SEATS do
+        local s = net.seats[i]
+        if s then
+            seats[i] = { name = s.name, steamId = s.steamId, show = s.show, face = s.face, ready = s.ready, ping = s.ping }
+        else
+            seats[i] = false
+        end
+    end
+    return seats
+end
+
+local function freeSeat()
+    for i = 2, net.MAX_SEATS do
+        if not net.seats[i] then return i end
+    end
+    return nil
+end
+
+local function setAvatar(seat, data)
+    local s = net.seats[seat]
+    if s and data then s.avatar = profile.imageFromBytes(data, "seat" .. seat) end
+end
+
+-- ---------------------------------------------------------------- host side
+local function hostReceive(peer, msg)
+    local seat = peerSeat[peer]
+    if msg.t == "hello" then
+        if seat then strike(peer, "second hello") return end
+        if net.joinCode and tostring(msg.code or ""):upper() ~= net.joinCode then
+            send(peer, { t = "refuse", why = "Wrong or missing join code (ask the host to COPY ADDRESS again)" })
+            peer:disconnect_later()
+            net.blocked = net.blocked + 1
+            return
+        end
+        if msg.v ~= net.VERSION then
+            send(peer, { t = "refuse", why = "Co-op version mismatch: host has " .. net.VERSION .. ", you have " .. tostring(msg.v) })
+            peer:disconnect_later()
+            return
+        end
+        if msg.game ~= currentVersion then
+            send(peer, { t = "refuse", why = "Game version mismatch: host runs " .. tostring(currentVersion) })
+            peer:disconnect_later()
+            return
+        end
+        local free = freeSeat()
+        if not free then
+            send(peer, { t = "refuse", why = "Lobby is full" })
+            peer:disconnect_later()
+            return
+        end
+        local card = cleanCard(msg.card) or myCard()
+        if card.steamId and kickedIds[card.steamId] then
+            send(peer, { t = "refuse", why = "The host removed you from this lobby" })
+            peer:disconnect_later()
+            return
+        end
+        card.ready = false
+        net.seats[free] = card
+        peerSeat[peer], seatPeer[free] = free, peer
+        send(peer, { t = "welcome", seat = free })
+        -- everyone's avatar to the newcomer
+        for s, bytes in pairs(avatarBytes) do send(peer, { t = "avatar", seat = s, data = bytes }) end
+        net.status = card.name .. " joined"
+        log("seat %d: %s joined", free, card.name)
+        lastLobbySent = 0
+    elseif not seat then
+        strike(peer, "message before hello") -- nothing else is accepted before hello
+    elseif msg.t == "ready" then
+        net.seats[seat].ready = msg.on == true
+        lastLobbySent = 0
+    elseif msg.t == "card" then
+        local card = cleanCard(msg.card)
+        if card then
+            card.ready, card.avatar = net.seats[seat].ready, net.seats[seat].avatar
+            net.seats[seat] = card
+            lastLobbySent = 0
+        end
+    elseif msg.t == "avatar" then
+        if profile.isPng(msg.data) then
+            avatarBytes[seat] = msg.data
+            setAvatar(seat, msg.data)
+            broadcast({ t = "avatar", seat = seat, data = msg.data }, peer)
+        else
+            strike(peer, "bad avatar")
+        end
+    else
+        strike(peer, "unknown message")
+    end
+end
+
+function hostDisconnect(peer)
+    local seat = peerSeat[peer]
+    if not seat then return end
+    local name = net.seats[seat] and net.seats[seat].name or "A player"
+    net.seats[seat], peerSeat[peer], seatPeer[seat], avatarBytes[seat] = nil, nil, nil, nil
+    broadcast({ t = "gone", seat = seat })
+    net.status = name .. " left"
+    lastLobbySent = 0
+end
+
+-- ---------------------------------------------------------------- client side
+local function clientReceive(msg)
+    if msg.t == "welcome" then
+        net.role, net.mySeat = "client", tonumber(msg.seat)
+        net.status = "Connected"
+        local bytes = profile.avatarBytes()
+        if bytes then send(server, { t = "avatar", data = bytes }) end
+    elseif msg.t == "refuse" then
+        net.status = "Refused: " .. tostring(msg.why)
+    elseif msg.t == "lobby" and type(msg.seats) == "table" then
+        for i = 1, net.MAX_SEATS do
+            local card = msg.seats[i] and cleanCard(msg.seats[i]) or nil
+            if card then card.avatar = avatarImages[i] end
+            net.seats[i] = card
+        end
+    elseif msg.t == "avatar" then
+        local seat = tonumber(msg.seat)
+        if seat and seat >= 1 and seat <= net.MAX_SEATS then
+            avatarImages[seat] = profile.imageFromBytes(msg.data, "seat" .. seat)
+            if net.seats[seat] then net.seats[seat].avatar = avatarImages[seat] end
+        end
+    elseif msg.t == "gone" then
+        local seat = tonumber(msg.seat)
+        if seat then net.seats[seat], avatarImages[seat] = nil, nil end
+    end
+end
+
+-- ---------------------------------------------------------------- public
+local function reset(status)
+    if host then
+        for _, peer in pairs(seatPeer) do pcall(peer.disconnect_now, peer) end
+        if server then pcall(server.disconnect_now, server) end
+        pcall(host.flush, host)
+        pcall(host.destroy, host)
+    end
+    host, server = nil, nil
+    peerSeat, seatPeer, avatarBytes, avatarImages = {}, {}, {}, {}
+    guard, kickedIds, myJoinCode = {}, {}, nil
+    statWindow = { at = love.timer.getTime(), up = 0, down = 0, msgsOut = 0, msgsIn = 0 }
+    net.stats = { upRate = 0, downRate = 0, totalUp = 0, totalDown = 0, msgsOutRate = 0, msgsInRate = 0 }
+    net.joinCode, net.blocked = nil, 0
+    net.role, net.mySeat, net.seats = "offline", nil, {}
+    net.status = status or "Offline"
+end
+
+-- requireCode: joiners must give the join code (shared inside the copied address).
+function net.hostGame(port, requireCode)
+    reset()
+    if not loadEnet() then return false end
+    net.port = tonumber(port) or net.DEFAULT_PORT
+    local ok, h = pcall(enet.host_create, "*:" .. net.port, GUARD.MAX_PEERS, 2)
+    if not ok or not h then
+        net.status = "Could not open port " .. net.port .. " (already in use?)"
+        return false
+    end
+    host = h
+    net.role, net.mySeat = "host", 1
+    net.seats[1] = myCard()
+    local bytes = profile.avatarBytes()
+    if bytes then avatarBytes[1] = bytes setAvatar(1, bytes) end
+    if requireCode ~= false then net.newJoinCode() end
+    net.status = "Hosting on UDP port " .. net.port
+    return true
+end
+
+-- "1.2.3.4", "1.2.3.4:5000" or "name.playit.gg:5000", optionally followed by "#CODE".
+-- Returns address, port, code (code may be nil).
+function net.parseAddress(text)
+    text = tostring(text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+    local rest, code = text:match("^(.-)#(%w+)$")
+    if rest then text = rest end
+    if text == "" then return nil end
+    local addr, port = text:match("^([^:]+):(%d+)$")
+    if addr then return addr, tonumber(port), code and code:upper() end
+    -- "1.2.3.4:47913ABCDE": the "#" got lost somewhere, the code still follows the port
+    local addr2, port2, code2 = text:match("^([^:]+):(%d+)(%a%w*)$")
+    if addr2 and not code then return addr2, tonumber(port2), code2:upper() end
+    if text:find(":") then return nil end
+    return text, net.DEFAULT_PORT, code and code:upper()
+end
+
+-- Host: throw a player out; they can't come back into this lobby.
+function net.kick(seat)
+    if net.role ~= "host" or seat == 1 then return end
+    local peer, s = seatPeer[seat], net.seats[seat]
+    if not peer then return end
+    if s and s.steamId then kickedIds[s.steamId] = true end
+    send(peer, { t = "refuse", why = "The host removed you from this lobby" })
+    pcall(host.flush, host)
+    hostDisconnect(peer)
+    guard[peer] = nil
+    peer:disconnect_later()
+    net.status = (s and s.name or "Player") .. " was removed"
+end
+
+function net.join(text)
+    local addr, port, code = net.parseAddress(text)
+    if not addr then net.status = "Type an address, like 192.168.0.10 or name.playit.gg:12345" return false end
+    reset()
+    myJoinCode = code
+    if not loadEnet() then return false end
+    local ok, h = pcall(enet.host_create, nil, 1, 2)
+    if not ok or not h then net.status = "Could not start networking" return false end
+    host = h
+    local ok2, peer = pcall(host.connect, host, addr .. ":" .. port, 2)
+    if not ok2 or not peer then
+        reset("Could not find " .. addr)
+        return false
+    end
+    server = peer
+    pcall(peer.timeout, peer, 32, 3000, 8000) -- same for a host that vanished
+    net.role = "connecting"
+    net.status = "Connecting to " .. addr .. ":" .. port .. "..."
+    net.connectStarted = love.timer.getTime()
+    return true
+end
+
+function net.leave()
+    reset("Left the lobby")
+end
+
+function net.setReady(on)
+    if net.role == "host" then
+        if net.seats[1] then net.seats[1].ready = on end
+        lastLobbySent = 0
+    elseif net.role == "client" then
+        send(server, { t = "ready", on = on })
+    end
+end
+
+function net.myReady()
+    local s = net.mySeat and net.seats[net.mySeat]
+    return s and s.ready or false
+end
+
+-- Re-send our card (after changing showcase).
+function net.refreshCard()
+    local card = myCard()
+    if net.role == "host" and net.seats[1] then
+        card.ready, card.avatar = net.seats[1].ready, net.seats[1].avatar
+        net.seats[1] = card
+        lastLobbySent = 0
+    elseif net.role == "client" then
+        send(server, { t = "card", card = card })
+    end
+end
+
+function net.playerCount()
+    local n = 0
+    for i = 1, net.MAX_SEATS do if net.seats[i] then n = n + 1 end end
+    return n
+end
+
+function net.allReady()
+    for i = 1, net.MAX_SEATS do
+        if net.seats[i] and not net.seats[i].ready then return false end
+    end
+    return net.playerCount() > 1
+end
+
+-- Called every frame from love.update.
+function net.update()
+    if not host then return end
+    for _ = 1, 64 do
+        local ok, ev = pcall(host.service, host, 0)
+        if not ok then reset("Network error: " .. tostring(ev)) return end
+        if not ev then break end
+        if ev.type == "connect" then
+            if net.role == "connecting" and ev.peer == server then
+                send(server, { t = "hello", v = net.VERSION, game = currentVersion, card = myCard(), code = myJoinCode })
+                net.status = "Joining lobby..."
+            elseif net.role == "host" then
+                local now = love.timer.getTime()
+                guard[ev.peer] = { joinedAt = now, strikes = 0, msgs = 0, bytes = 0, window = now }
+                -- notice a player whose game closed or crashed after ~8 s instead of enet's ~30 s
+                pcall(ev.peer.timeout, ev.peer, 32, 3000, 8000)
+            end
+        elseif ev.type == "receive" then
+            countIn()
+            if net.role == "host" then
+                if admit(ev.peer, #ev.data) then
+                    local msg = codec.decode(ev.data)
+                    if type(msg) == "table" and type(msg.t) == "string" then
+                        hostReceive(ev.peer, msg)
+                    else
+                        strike(ev.peer, "not a co-op message")
+                    end
+                end
+            elseif ev.peer == server then
+                local msg = codec.decode(ev.data)
+                if type(msg) == "table" and type(msg.t) == "string" then clientReceive(msg) end
+            end
+        elseif ev.type == "disconnect" then
+            if net.role == "host" then
+                guard[ev.peer] = nil
+                hostDisconnect(ev.peer)
+            else
+                local why = net.status:find("^Refused") and net.status or
+                    (net.role == "connecting" and "Could not reach the host" or "Disconnected from the host")
+                reset(why)
+                return
+            end
+        end
+    end
+    if host then updateStats(host) end
+    if net.role == "connecting" and net.connectStarted and love.timer.getTime() - net.connectStarted > 10 then
+        reset("No answer from the host (wrong address, or the port is not reachable)")
+        return
+    end
+    if net.role == "host" then
+        local now = love.timer.getTime()
+        -- connections that never proved they're players
+        for peer, g in pairs(guard) do
+            if not peerSeat[peer] and now - g.joinedAt > GUARD.HELLO_TIMEOUT then drop(peer, "no hello in time") end
+        end
+        if now - lastLobbySent > 1 then
+            for seat, peer in pairs(seatPeer) do
+                if net.seats[seat] then net.seats[seat].ping = peer:round_trip_time() end
+            end
+            broadcast({ t = "lobby", seats = lobbyView() })
+            lastLobbySent = now
+        end
+    end
+end
+
+function net.shutdown()
+    reset()
+end
+
+-- Our address on the local network (no packet is sent: a UDP "connect" only picks a route).
+function net.lanAddress()
+    local ok, socket = pcall(require, "socket")
+    if not ok then return nil end
+    local u = socket.udp()
+    if not u then return nil end
+    u:setpeername("8.8.8.8", 9)
+    local ip = u:getsockname()
+    u:close()
+    if ip and ip ~= "0.0.0.0" then return ip end
+    return nil
+end
+
+return net

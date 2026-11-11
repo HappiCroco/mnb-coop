@@ -1,0 +1,171 @@
+# Mud and Blood Co-op. Standalone; GMenu (optional) gives it an options page and a page number.
+[manifest]
+version = "0.4.0"
+priority = 80
+
+[[patches]]
+[patches.module]
+source = "coop_codec.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_codec"
+
+[[patches]]
+[patches.module]
+source = "coop_profile.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_profile"
+
+[[patches]]
+[patches.module]
+source = "coop_net.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_net"
+
+[[patches]]
+[patches.module]
+source = "coop_campaign.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_campaign"
+
+[[patches]]
+[patches.module]
+source = "coop_lobby.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_lobby"
+
+[[patches]]
+[patches.module]
+source = "coop_hud.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_hud"
+
+[[patches]]
+[patches.module]
+source = "mnb_coop_main.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/mnb_coop_main"
+
+# Load last in main.lua, after love.update/keypressed/... exist, so the wrappers chain them.
+[[patches]]
+[patches.copy]
+target = "main.lua"
+position = "append"
+payload = '''
+require("includes/mods/mnb_coop/mnb_coop_main")
+'''
+
+# Menu buttons: right before buttonUpdateMenu's mouse-over pass, so our tooltips work.
+[[patches]]
+[patches.pattern]
+target = "includes/urb_engine.lua"
+pattern = '''
+--love.system.openURL("http://love2d.org/")
+
+-- mouse over code
+activeButton = 0
+'''
+position = "before"
+payload = '''
+if mnbCoop then mnbCoop.registerMenuButtons() end
+'''
+match_indent = true
+times = 1
+
+# Menu drawing: right before drawState1 draws the tooltip, so tooltips stay on top.
+[[patches]]
+[patches.pattern]
+target = "includes/drawFiles.lua"
+pattern = '''
+if(mouseOverText ~= "") then
+local thisx =  love.mouse.getX()
+'''
+position = "before"
+payload = '''
+if mnbCoop then mnbCoop.drawMenu() end
+'''
+match_indent = true
+times = 1
+
+# ---------------------------------------------------------------------------
+# Co-op campaign squad: 3 soldiers per player. The game's "6" squad checks ask
+# coopSquadMax() instead; it returns 6 except during the co-op campaign.
+# ---------------------------------------------------------------------------
+
+# Dead-soldier replacement scans (bcReplacement, ribReplacement, alarmReplacement,
+# the replace skill) look at slots 1..6 only.
+[[patches]]
+[patches.pattern]
+target = ["includes/bcChecks.lua", "includes/urb_engine.lua"]
+pattern = '''
+for i=1, 6, 1 do
+if(player.deployedTroops[i].dead > 0) then
+'''
+position = "at"
+payload = '''
+for i=1, (coopSquadMax and coopSquadMax() or 6), 1 do
+  if(player.deployedTroops[i].dead > 0) then
+'''
+match_indent = true
+
+# Alarm replacement only while the squad is below full.
+[[patches]]
+[patches.regex]
+target = "includes/urb_engine.lua"
+pattern = 'playerControlled > 0 and squadSize\(\) < (?P<n>6)\) then'
+root_capture = "n"
+position = "at"
+payload = "(coopSquadMax and coopSquadMax() or 6)"
+
+# Size control (classic big-squad punishment) starts above a full squad.
+[[patches]]
+[patches.regex]
+target = "includes/urb_engine.lua"
+pattern = 'if\(squadSizer\(\) > (?P<n>6)\) then'
+root_capture = "n"
+position = "at"
+payload = "(coopSquadMax and coopSquadMax() or 6)"
+
+# "Full squad" voice line.
+[[patches]]
+[patches.regex]
+target = "includes/urb_engine.lua"
+pattern = 'elseif\(squadSize\(\) == (?P<n>6)\) then'
+root_capture = "n"
+position = "at"
+payload = "(coopSquadMax and coopSquadMax() or 6)"
+
+# Damage bonus for missing squad members counts from a full squad.
+[[patches]]
+[patches.regex]
+target = "includes/urb_engine.lua"
+pattern = 'soldierMissing = 1\+\(\(\((?P<n>6)-squadSize\(\)\)\*5\)/100\)'
+root_capture = "n"
+position = "at"
+payload = "(coopSquadMax and coopSquadMax() or 6)"
+
+# Debrief: full-squad XP doubling and full honour.
+[[patches]]
+[patches.regex]
+target = "includes/urb_engine.lua"
+pattern = 'if\(squadSize\(\) >= (?P<n>6)\) ?then'
+root_capture = "n"
+position = "at"
+payload = "(coopSquadMax and coopSquadMax() or 6)"
+
+# Debrief: "5+ alive" check.
+[[patches]]
+[patches.regex]
+target = "includes/urb_engine.lua"
+pattern = 'if\(squadSize\(\) >= (?P<n>5)\)then'
+root_capture = "n"
+position = "at"
+payload = "(coopSquadMax and coopSquadMax() - 1 or 5)"
+
+# Battle condition 50: "keep the whole team alive".
+[[patches]]
+[patches.regex]
+target = "includes/bcChecks.lua"
+pattern = 'player\.bcModTeamCap = (?P<n>6)'
+root_capture = "n"
+position = "at"
+payload = "(coopSquadMax and coopSquadMax() or 6)"
