@@ -1,0 +1,10 @@
+{
+  "id": "mnb_coop",
+  "name": "Mud and Blood Co-op",
+  "author": "Community",
+  "version": "0.1.0",
+  "description": "Adds co-op multiplayer support to Mud and Blood.",
+  "entry": "mnb_coop_main.lua",
+  "priority": 10,
+  "enabled": false
+}
