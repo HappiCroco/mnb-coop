@@ -292,6 +292,14 @@ check(onRadar.coopSide == "R" and onRadar.x >= 6300 + defense.SPAWN_CLEAR and on
   "a new German by the radar is pushed out to the clear zone's edge (" .. onRadar.x .. ")")
 check(onRadarL.coopSide == "L" and onRadarL.x <= 6300 - defense.SPAWN_CLEAR, "on the left too (" .. onRadarL.x .. ")")
 check(player.mnb2Miss == misses, "and doesn't score for appearing there")
+local halftrack = { faction = "axis", x = 6300 + 400, y = 500 }
+player.deployedVehicles = player.deployedVehicles or {}
+table.insert(player.deployedVehicles, halftrack)
+local dismount = troop("axis", 6300 + 400, 550) -- his squad gets out by the radar
+table.insert(T, dismount)
+defense.update()
+check(dismount.x == 6700 and dismount.coopSide == "R", "men getting out of a German vehicle stay where it is")
+table.remove(player.deployedVehicles)
 local fighting = troop("axis", 6300 + 300, 300) -- saved mid-battle: already near the squad
 table.insert(T, fighting)
 defense.afterSetup(false)

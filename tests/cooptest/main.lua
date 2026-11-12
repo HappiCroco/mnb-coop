@@ -180,6 +180,21 @@ for i = 1, 150 do
   love.timer.sleep(0.01)
 end
 check(dropped3, "flooder dropped")
+-- 3b. byte flooding with big packets in one piece (few messages, many bytes) is cut off too
+local raw5 = enet.host_create()
+local bigFlood = raw5:connect(ADDR, 2)
+local dropped5, sent5 = false, false
+local blob = codec.encode({ t = "ready", pad = ("x"):rep(150 * 1024) })
+for i = 1, 200 do
+  hostNet.update()
+  local e = raw5:service(0)
+  if e and e.type == "connect" and not sent5 then
+    sent5 = true
+    for k = 1, 4 do bigFlood:send(blob) end -- 600 KB in 4 messages: over the 400 KB/s byte limit
+  elseif e and e.type == "disconnect" then dropped5 = true end
+  love.timer.sleep(0.01)
+end
+check(dropped5, "big unsplit packets count their bytes: byte flooder dropped")
 check(hostNet.playerCount() == 1 and hostNet.role == "host", "host still fine after attacks (blocked " .. hostNet.blocked .. ")")
 -- 4. a real player can still get in afterwards
 local c4 = freshNet()
