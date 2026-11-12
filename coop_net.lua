@@ -433,7 +433,15 @@ local function clientReceive(msg)
         net.role, net.mySeat = "client", tonumber(msg.seat)
         net.status = "Connected"
         local bytes = profile.avatarBytes()
-        if bytes then send(server, { t = "avatar", data = bytes }) end
+        if bytes then
+            send(server, { t = "avatar", data = bytes })
+            -- our own card: the host forwards our avatar to everyone but us, so set it here
+            -- (without this a friend saw a default soldier's face on their own card)
+            if net.mySeat then
+                avatarImages[net.mySeat] = profile.imageFromBytes(bytes, "seat" .. net.mySeat)
+                if net.seats[net.mySeat] then net.seats[net.mySeat].avatar = avatarImages[net.mySeat] end
+            end
+        end
         if net.onWelcome then
             local ok, err = pcall(net.onWelcome)
             if not ok then print("[mnb_coop] welcome: " .. tostring(err)) end

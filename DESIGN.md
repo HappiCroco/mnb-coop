@@ -300,6 +300,11 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   `mnb2Miss`, iron crosses on the HUD; 10 = game over, the game's own rule). He's sent back to his side (right:
   x 12000 like the game's misses; left: x 600). "L" Germans are kept right of x 330 so the game's own x<300 miss
   never fires for them. Jagers/zombies don't score (as in the game).
+- (v0.9.5) Special waves (owner: "should only focus on one side"): the boss waves spawnMNB2Wave rolls
+  (mnb2.lua:750-793, mnb2CreateFJ/SS/Wer/.../Feld) are wrapped (`defense.wrapSpecial`): the whole wave comes from one
+  side, alternating, with no twins. They run inside spawnMNB2Wave, so their Germans get a side first and wrapWave
+  (which only takes Germans with no side) leaves them alone; a paradrop inside one drops on that side only
+  (`defense.specialSide`).
 - (v0.9.3) Spawn clearance (owner: "Germans spawning on the radar"): no new German within `SPAWN_CLEAR` (900 px)
   of the radar. The game aims waves (front + 750), paradrops (front + 0/600/1000, spread ±500) and carts at the
   front line, which here is next to the radar. Waves: right Germans pushed to radar + 900..1100, twins/left ones to

@@ -119,6 +119,35 @@ farWave()
 check(T[n3 + 1].x == hi + 3000 and T[n3 + 2].x == lo - 3000, "a far wave isn't moved; its twin mirrors it")
 for i = #T, n3 + 1, -1 do table.remove(T, i) end
 check(twin ~= orig and twin.weapon ~= orig.weapon or orig.weapon == nil, "the twin has his own tables")
+-- special waves: whole from one side, alternating, never doubled (even with friends)
+local special = defense.wrapSpecial(function()
+  for k = 1, 3 do table.insert(player.deployedTroops, troop("axis", hi + 3000, 100 + k * 100)) end
+end)
+local inWave = defense.wrapWave(function() special() end) -- they run inside spawnMNB2Wave
+local function sides(from)
+  local l, r = 0, 0
+  for i = from, #T do if T[i].coopSide == "L" then l = l + 1 elseif T[i].coopSide == "R" then r = r + 1 end end
+  return l, r
+end
+local n4 = #T
+defense.specialFlip = 0
+inWave()
+local sl, sr = sides(n4 + 1)
+check(sl + sr == 3 and (sl == 0 or sr == 0), "with friends: a special wave comes from one side, not doubled (" .. sl .. " left, " .. sr .. " right)")
+local n5 = #T
+inWave()
+local sl2, sr2 = sides(n5 + 1)
+check(sl2 + sr2 == 3 and (sl2 == 3) == (sr == 3), "the next special wave comes from the other side")
+local leftOnes = sl == 3 and n4 or n5
+check(T[leftOnes + 1].x <= 6300 - defense.SPAWN_CLEAR, "a left special wave is mirrored past the clear zone")
+for i = #T, n4 + 1, -1 do table.remove(T, i) end
+-- a paradrop that is part of a special wave drops on its side only
+local dropsS = {}
+local fjS = defense.wrapFjDrop(function(x) dropsS[#dropsS + 1] = x end)
+defense.specialSide = "L"
+fjS(hi + 3000, 360)
+defense.specialSide = nil
+check(#dropsS == 1 and dropsS[1] < 6300, "special-wave paradrop: one drop, on the wave's side")
 net.seats = {}
 -- the twins leave the test's list again
 for i = #T, n2 + 1, -1 do table.remove(T, i) end

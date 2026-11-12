@@ -278,6 +278,47 @@ function defense.wrapWave(orig)
     end
 end
 
+-- Special waves (owner, 2026-11-12: "should only focus on one side"): the boss waves
+-- spawnMNB2Wave rolls (mnb2.lua:750-793: FJ, SS, Wer, Volks, Grenadier, Luft, Feld, snipers,
+-- air drop...) come whole from ONE side, alternating, never doubled. They run inside
+-- spawnMNB2Wave, so their Germans get their side here, before wrapWave looks for new ones
+-- (it only takes Germans with no side yet). Their vehicles stay right, like all vehicles.
+defense.specialFlip = 0
+defense.specialSide = nil -- set while a special wave is being made (fjDrop drops on that side only)
+
+function defense.wrapSpecial(orig)
+    return function(...)
+        if not defense.active() or defense.specialSide then return orig(...) end
+        defense.specialFlip = defense.specialFlip + 1
+        local side = defense.specialFlip % 2 == 0 and "L" or "R"
+        local troops = player.deployedTroops
+        local n0 = #troops
+        defense.specialSide = side
+        local r = { pcall(orig, ...) }
+        defense.specialSide = nil
+        local lo, hi = alliedSpan()
+        local eastMin = defense.radarX + defense.SPAWN_CLEAR
+        local westMax = defense.radarX - defense.SPAWN_CLEAR
+        for i = n0 + 1, #troops do
+            local t = troops[i]
+            if isGerman(t) and t.coopSide == nil then
+                if t.x < defense.radarX then
+                    t.coopSide = "L" -- dropped on the west already (fjDrop below)
+                    if t.x > westMax then defense.placeAt(t, westMax - randNbr(200)) end
+                elseif side == "L" then
+                    local x = math.max(defense.LEFT_EDGE + 200, math.floor(lo - (math.max(t.x, eastMin) - hi)))
+                    sendLeft(t, math.min(westMax - randNbr(200), x))
+                else
+                    t.coopSide = "R"
+                    if t.x < eastMin then defense.placeAt(t, eastMin + randNbr(200)) end
+                end
+            end
+        end
+        if not r[1] then error(r[2], 0) end
+        return unpack(r, 2)
+    end
+end
+
 -- ---------------------------------------------------------------- German support from both sides
 -- The game aims its German support at alliedFrontLine() (the eastmost friendly soldier).
 -- In the defense there are two fronts: defense.frontLines() gives both (west, east), and
@@ -306,6 +347,9 @@ function defense.wrapFjDrop(orig)
         local rx, edge = defense.radarX, defense.SPAWN_CLEAR + 500
         local east = math.max(x, rx + edge)
         local west = math.min(mirrorX(x), rx - edge)
+        if defense.specialSide then -- part of a special wave: its one side only
+            return orig(defense.specialSide == "L" and west or east, y, ...)
+        end
         if net.playerCount() > 1 then
             orig(east, y, ...)
             return orig(west, y, ...)
