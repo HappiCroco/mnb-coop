@@ -13,6 +13,7 @@
 -- Active only in the co-op campaign with more than one player, or while watching.
 -- =============================================================================
 local net = require("includes/mods/mnb_coop/coop_net")
+local wallet = require("includes/mods/mnb_coop/coop_wallet")
 
 local squad = {}
 
@@ -671,6 +672,12 @@ local function runSwap(o)
     log("seat %d swapped faces %d and %d", o.seat, i, j)
 end
 
+-- one friend's order, run with their wallet (an error is printed, the rest of the queue goes on)
+local function runAs(seat, fn, o)
+    local ok, err = wallet.with(seat, fn, o)
+    if not ok then print("[mnb_coop] friend's order: " .. tostring(err)) end
+end
+
 -- Host, at the start of its frame (before the game's update).
 function squad.hostRunOrders()
     if type(player) ~= "table" or player.gameState ~= 0 then
@@ -681,18 +688,21 @@ function squad.hostRunOrders()
     queue = {}
     if not gameRelease or type(player) ~= "table" or player.gameState ~= 0 or pause ~= 0 then return end
     for _, o in ipairs(list) do
+        -- Anything that can spend TP (a bought unit, a radio strike, a gun, a skill, a fired
+        -- prompt) runs with that friend's wallet in player.tp (coop_wallet.lua); the host's
+        -- comes back afterwards, even if the game's code fails.
         if o.kind == "promo" then
             runPromo(o)
         elseif o.kind == "skill" then
-            runSkill(o)
+            runAs(o.seat, runSkill, o)
         elseif o.kind == "hud" then
-            runHud(o)
+            runAs(o.seat, runHud, o)
         elseif o.kind == "swap" then
             runSwap(o)
         elseif o.kind then
             runKey(o)
         else
-            runMove(o)
+            runAs(o.seat, runMove, o)
         end
     end
 end

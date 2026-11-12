@@ -297,6 +297,27 @@ check(not defense.on, "resume without a radar: an ordinary Classic battle")
 player.placeables = saved
 defense.afterSetup(false)
 
+-- wave pace: living Germans count half in the defense (the qm.toml patch on the wave timer)
+check(defense.on and defense.wavePace() == 2, "defense: the wave timer counts the living Germans / 2")
+player.gameState = 1
+check(defense.wavePace() == 1, "not in a battle: pace 1")
+player.gameState = 0
+defense.on = false
+check(defense.wavePace() == 1, "an ordinary Classic battle: the game's own pace (1)")
+defense.on = true
+player.gameType = 0
+check(defense.wavePace() == 1, "not Classic: pace 1")
+player.gameType = 1
+do
+  local axis = 0
+  for _, t in ipairs(player.deployedTroops) do if t.faction == "axis" and t.health > 10 then axis = axis + 1 end end
+  -- the patched expression, as qm.toml writes it
+  coopWavePace = defense.wavePace
+  check((axis / (coopWavePace and coopWavePace() or 1)) == axis / 2, "patched wave timer expression: half the Germans")
+  coopWavePace = nil
+  check((axis / (coopWavePace and coopWavePace() or 1)) == axis, "without the co-op the expression is the game's own count")
+end
+
 -- the radar
 player.mnb2Miss = 0
 local runner = troop("axis", 6300 + 50, 360) runner.coopSide = "R"

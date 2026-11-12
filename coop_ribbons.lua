@@ -186,6 +186,13 @@ function ribbons.afterGiveTp(before, nbr)
     if player.tp < want then player.tp = math.min(want, cap + 2) end
 end
 
+-- How much our ribbons raise the TP cap above the game's tpMax (the wallets cap friends with it)
+function ribbons.capBonus()
+    if type(player) ~= "table" or player.mnb2SubGame == 6 or player.mnb2SubGame == 8 then return 0 end
+    if ribbons.inCoop() and hasIt(201) then return 2 end
+    return 0
+end
+
 -- ---------------------------------------------------------------- start up
 function ribbons.install()
     ribbons.loadImages()

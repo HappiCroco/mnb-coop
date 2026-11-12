@@ -333,6 +333,23 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   put back after the game's clamp in the `giveTp` wrap. 202 Hold the Line (wave 50, mnb2Miss 0): award works, the
   free-riflemen effect is a TODO. 203 Brothers in Arms (25 revives, `player.coopStats.revives`): stub until the revive
   hook exists. Art: `tools/ribbons` (LÖVE program, drawn 4x and averaged down, fixed seed). Test: ribtest.
+- (v0.9.11) WALLETS (`coop_wallet.lua`): in a co-op Classic battle with friends each player has their own TP (a shared
+  cap of 20 starved three players). The host's wallet is `player.tp`; friends' are host-side numbers per seat, started
+  at the host's TP when the battle begins (new troop list = reset; never saved). Every `giveTp` adds its FULL amount
+  to every wallet, each capped at the game's `tpMax` (read after the game's own giveTp ran), not doubled any more;
+  solo (a solo defense) keeps one pool, doubled. A friend's replayed order (`move`, `hud`, `skill` in
+  `squad.hostRunOrders`, so every armed prompt, bought unit, strike and gun) runs in `wallet.with(seat, fn)`: their
+  wallet is swapped into `player.tp` for the call and stored back, the host's put back even on an error. Direct income
+  the game adds to `player.tp` itself (sitrep +5, directive TP Surge, withdrawal refund) lands in whichever wallet is
+  in `player.tp` then: the host's, except inside a replayed order. Friends see their own TP: the host sends `wallet {v}`
+  on change and the mirror's `player.tp` is overwritten every frame (`wallet.clientApply`); the mirror never reaches
+  saves. G gives 5 TP to the next player (round the table): the friend sends `givetp` with no fields, the host decides
+  amount and receiver, clamps to what the giver has and what fits the receiver's cap, one give per 0.5 s per seat.
+  Test: ordertest.
+- (v0.9.11) Wave pace: the next Classic wave comes at `deployTimer > 60 + totalAxis()` (urb_engine.lua:6084). The
+  defense twins every wave, so twice the Germans stand and waves (and their TP) came slower; a qm.toml regex patch makes
+  it `totalAxis() / coopWavePace()` (2 in a defense battle, 1 elsewhere or without the mod). Test: defensetest.
+  (Wallets are capped at tpMax + `ribbons.capBonus()`, so Two-Front War's +2 reaches every wallet.)
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.
@@ -389,7 +406,7 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   radar - 900 or further. fjDrop aimed at least radar ± 1400 (900 + the drop's 500 spread). Catch-all in
   defense.update: any German appearing without a side inside the zone moves to its side's edge. Loading a battle
   under way gives the Germans already there a side first, so they're not moved.
-- Ownership: the Classic dealing from v0.8.0 (start soldiers in turn, recruits = recruiter's, TP shared).
+- Ownership: the Classic dealing from v0.8.0 (start soldiers in turn, recruits = recruiter's; TP was shared, own wallets since v0.9.11).
 - (v0.9.3) TP income doubled in co-op Classic with friends (owner: the shared pool was too tight for two fronts):
   `giveTp` wrapped (mnb_coop_main.lua), host only. The cap (20 + ribbons) isn't raised, so spend it or lose it.
   The radar can't be destroyed: the game's `destruction()` (particlesSystem.lua:7028) removes placeables by exact

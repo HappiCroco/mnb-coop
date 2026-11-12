@@ -1,7 +1,7 @@
 -- Headless test of coop_squad.lua: ownership, host rules, friends' orders (moves, loot, right click,
 -- promotions, skills, prompts, H/Alt, HUD buttons, face swaps), client input, Classic dealing.
 local MOD = os.getenv("COOP_DIR")
-for _, n in ipairs({ "coop_codec", "coop_profile", "coop_mods", "coop_net", "coop_squad" }) do
+for _, n in ipairs({ "coop_codec", "coop_profile", "coop_mods", "coop_net", "coop_wallet", "coop_squad" }) do
   package.preload["includes/mods/mnb_coop/" .. n] = function() return assert(loadfile(MOD .. "/" .. n .. ".lua"))() end
 end
 local fails, passes = 0, 0
@@ -585,6 +585,163 @@ check(P[1].shortcut == 2 and P[2].shortcut == 0, "host keeps its Ctrl groups; fr
 P[9] = { id = 300, faction = "allied", playerControlled = 1, dead = 0, x = 0, y = 0 }
 squad.hostAfterButtonEngine()
 check(P[9].coopOwner == nil and squad.ownerOf(P[9]) == 1, "later arrivals aren't re-dealt (host's unless recruited)")
+
+-- ---- wallets: each player's own TP in a Classic battle with friends (coop_wallet.lua)
+local wallet = require("includes/mods/mnb_coop/coop_wallet")
+local clock = 100
+love.timer = love.timer or {}
+love.timer.getTime = function() return clock end
+-- stand-ins for the game: giveTp (mnb2.lua:894) and a purchase button that costs `testCost`
+function giveTp(n) tpMax = 20 player.tp = player.tp + n if player.tp > tpMax then player.tp = tpMax end end
+local income = function(n) return wallet.giveTp(giveTp, n) end
+testCost, testBoom = 2, false
+function mnb2CallRiflezButton()
+  player.tp = player.tp - testCost
+  if testBoom then error("boom") end
+end
+squad.setGameButtonEngine(function() buttons = { Button.new(0, 0, 40, 40, "mnb2CallRiflez") } end)
+local function buy(seat, cost)
+  testCost = cost
+  squad.onClientMessage(seat, { t = "hud", label = "mnb2CallRiflez", x = 1, y = 1, cx = 0, cy = 0, ids = {}, menu = 1 })
+  squad.hostRunOrders()
+end
+net.sendTo = function(seat, msg) toSeat[#toSeat + 1] = { seat = seat, msg = msg } end
+toSeat = {}
+net.role, net.mySeat = "host", 1
+net.seats = { { name = "Host" }, { name = "Ann" }, { name = "Bob" } }
+mnbCoop.battle.viewing = false
+player = { gameState = 0, gameType = 1, mnb2SubGame = 0, tp = 7, screenx = 0, screeny = 0, deployedVehicles = {},
+  deployedTroops = { { id = 1, faction = "allied", playerControlled = 1, dead = 0, health = 100, x = 0, y = 0 } } }
+check(wallet.active(), "wallets rule in a Classic battle with friends")
+wallet.hostUpdate()
+check(wallet.get(1) == 7 and wallet.get(2) == 7 and wallet.get(3) == 7, "everyone starts the battle with the host's TP")
+local told = {}
+for _, m in ipairs(toSeat) do if m.msg.t == "wallet" then told[m.seat] = m.msg.v end end
+check(told[2] == 7 and told[3] == 7 and told[1] == nil, "each friend is told their wallet")
+toSeat = {}
+wallet.hostUpdate()
+check(#toSeat == 0, "nothing re-sent while nothing changed")
+
+-- income: the full amount into every wallet, not doubled, each capped
+income(1)
+check(wallet.get(1) == 8 and wallet.get(2) == 8 and wallet.get(3) == 8 and player.tp == 8, "income 1x to every wallet")
+income(30)
+check(wallet.get(1) == 20 and wallet.get(2) == 20 and wallet.get(3) == 20, "every wallet capped at tpMax (20)")
+check(wallet.cap() == 20, "cap read from the game's tpMax")
+rawset(_G, "tpMax", 22) -- a ribbon raised it: the next giveTp says so
+function giveTp(n) tpMax = 22 player.tp = math.min(22, player.tp + n) end
+income(1)
+check(wallet.get(1) == 21 and wallet.get(2) == 21 and wallet.get(3) == 21, "the host's ribbons raise everyone's cap")
+function giveTp(n) tpMax = 20 player.tp = player.tp + n if player.tp > tpMax then player.tp = tpMax end end
+income(0) -- (the ribbon is gone again: the game clamps the host, and so does every wallet)
+check(player.tp == 20 and wallet.get(2) == 20 and wallet.get(3) == 20, "a lower cap clamps every wallet at the next income")
+
+-- a friend's purchase spends only their wallet
+buy(2, 2)
+check(wallet.get(2) == 18 and wallet.get(1) == 20 and wallet.get(3) == 20 and player.tp == 20, "Ann's purchase spends only Ann's TP")
+buy(3, 10)
+check(wallet.get(3) == 10 and wallet.get(2) == 18 and player.tp == 20, "Bob's purchase spends only Bob's TP")
+-- income while a friend's order runs still reaches all three exactly once
+wallet.with(2, function() income(1) end)
+check(wallet.get(2) == 19 and wallet.get(3) == 11 and wallet.get(1) == 20 and player.tp == 20, "income inside a friend's call: once each, host's TP safe")
+-- an error inside the game's code: the host's wallet comes back
+testBoom = true
+buy(2, 4)
+testBoom = false
+check(player.tp == 20 and wallet.get(2) == 15, "an error in the game's button: swapped back, the spend stands")
+local okw, errw = wallet.with(3, function() player.tp = 4 error("crash") end)
+check(okw == false and tostring(errw):find("crash") and player.tp == 20 and wallet.get(3) == 4, "wallet.with swaps back after an error and reports it")
+-- the host's own purchase is plain player.tp
+check(select(1, wallet.with(1, function() player.tp = player.tp - 5 end)) and player.tp == 15 and wallet.get(2) == 15, "host's own spend touches only his wallet")
+player.tp = 20
+wallet.with(3, function() player.tp = 10 end)
+
+-- giving TP
+check(wallet.onClientMessage(2, { t = "givetp", n = 1000, to = 1 }) == true, "givetp understood (extra fields ignored)")
+check(wallet.get(2) == 10 and wallet.get(3) == 15 and wallet.get(1) == 20, "Ann gives 5 to the next player (Bob), not what the message asked")
+check(wallet.onClientMessage(2, { t = "fly" }) == false, "other messages aren't the wallet's")
+wallet.onClientMessage(2, { t = "givetp" })
+check(wallet.get(2) == 10 and wallet.get(3) == 15, "two gives within half a second: the second is ignored")
+clock = clock + 1
+check(wallet.keypressed("g") and wallet.get(1) == 15 and wallet.get(2) == 15, "the host's G gives 5 to the next player (Ann)")
+check(not wallet.keypressed("x"), "other keys aren't wallet keys")
+clock = clock + 1
+wallet.onClientMessage(3, { t = "givetp" }) -- the last seat gives round to the host
+check(wallet.get(3) == 10 and wallet.get(1) == 20, "the turn goes round: Bob gives to the host")
+clock = clock + 1
+wallet.with(2, function() player.tp = 3 end)
+wallet.onClientMessage(2, { t = "givetp" })
+check(wallet.get(2) == 0 and wallet.get(3) == 13, "a give is never more than the giver has")
+clock = clock + 1
+local before3 = wallet.get(3)
+wallet.onClientMessage(2, { t = "givetp" })
+check(wallet.get(2) == 0 and wallet.get(3) == before3, "nothing to give: nothing moves, never below 0")
+local noted
+for _, m in ipairs(toSeat) do if m.seat == 2 and m.msg.note and m.msg.note:find("no TP") then noted = true end end
+check(noted, "the giver is told they have none")
+clock = clock + 1
+wallet.with(3, function() player.tp = 18 end)
+wallet.with(2, function() player.tp = 9 end)
+wallet.onClientMessage(2, { t = "givetp" })
+check(wallet.get(3) == 20 and wallet.get(2) == 7, "the receiver is capped: only what fits moves")
+check(wallet.onClientMessage(3, { t = "givetp" }) and wallet.onClientMessage(2, { t = "givetp" }) == true, "a give to a full wallet is a no-op, not an error")
+
+-- a seat that leaves, a seat that joins later
+wallet.forgetSeat(3)
+net.seats[3] = nil
+wallet.hostUpdate()
+check(wallet.get(3) == nil, "a player who left has no wallet")
+clock = clock + 1
+wallet.onClientMessage(2, { t = "givetp" })
+check(wallet.get(2) == 7 and wallet.get(1) == 20, "alone with the host the give still goes to the host, who is capped (nothing moves)")
+net.seats[3] = { name = "Bob" }
+wallet.hostUpdate()
+check(wallet.get(3) == 7, "a player who joins mid-battle starts with the battle's starting TP")
+
+-- a new battle starts everything over
+player = { gameState = 0, gameType = 1, mnb2SubGame = 0, tp = 12, screenx = 0, screeny = 0, deployedVehicles = {},
+  deployedTroops = { { id = 1, faction = "allied", playerControlled = 1, dead = 0, health = 100, x = 0, y = 0 } } }
+wallet.hostUpdate()
+check(wallet.get(2) == 12 and wallet.get(3) == 12, "wallets reset when a battle starts")
+
+-- not active: solo, or not Classic
+net.seats[2], net.seats[3] = nil, nil
+check(not wallet.active(), "solo: no wallets")
+player.tp = 5
+check(wallet.with(2, function() player.tp = player.tp + 1 end) and player.tp == 6, "solo: a call is just a call on player.tp")
+check(not wallet.keypressed("g"), "solo: G does nothing")
+net.seats[2], net.seats[3] = { name = "Ann" }, { name = "Bob" }
+player.gameType = 0
+check(not wallet.active() and not wallet.keypressed("g"), "campaign battles keep the shared game rules")
+player.gameType = 1
+
+-- the friend's side: their own TP over the mirror's
+net.role, net.mySeat = "client", 2
+mnbCoop.battle.viewing = true
+player = { gameState = 0, gameType = 1, tp = 99 }
+wallet.clientApply()
+check(player.tp == 99, "no wallet message yet: the mirror's TP is left alone")
+wallet.onHostMessage({ t = "wallet", v = 13 })
+wallet.clientApply()
+check(player.tp == 13, "the friend sees their own TP, not the host's")
+wallet.onHostMessage({ t = "wallet", v = "evil" })
+wallet.onHostMessage({ t = "wallet", v = 0 / 0 })
+wallet.onHostMessage({ t = "wallet", v = 1e12 })
+wallet.clientApply()
+check(player.tp == 13, "junk values from the host's channel are ignored")
+local noteShown
+mnbCoop.notice = function(t) noteShown = t end
+wallet.onHostMessage({ t = "wallet", note = "Bob gave you 5 TP\n" .. string.rep("x", 200) })
+check(noteShown and #noteShown <= 80 and not noteShown:find("\n"), "the note is cut short and cleaned")
+sent = {}
+net.sendToHost = function(msg) sent[#sent + 1] = msg end
+check(wallet.keypressed("g") and #sent == 1 and sent[1].t == "givetp", "the friend's G asks the host (nothing else sent)")
+wallet.clientReset()
+player.tp = 99
+wallet.clientApply()
+check(player.tp == 99, "after watching ends the wallet is forgotten")
+mnbCoop.battle.viewing = false
+net.role, net.mySeat = "host", 1
 
 print(("%d passed, %d failed"):format(passes, fails))
 love.event.quit(fails == 0 and 0 or 1)
