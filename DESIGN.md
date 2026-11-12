@@ -253,8 +253,10 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   troopClick, from its `troop_<id>` buttons. The replay now adds those buttons (25 px, every standing allied soldier,
   as urb_engine.lua:44413) when a prompt is armed. Gear buttons arm the prompt with no mousePrompter, so a seat
   prompt with `who == 0` is kept as is (before, `armedPrompt` threw it away at once: friends could buy soldiers but
-  not guns). Map tips (`tipCuez<text>` buttons) are harvested on the friend's window as `tipCuez`; the host runs
-  tipCuezButton at their point, fading the tip nearest it.
+  not guns). Map tips (`tipCuez<n>` buttons) are harvested on the friend's window as `tipCuez`.
+- (v0.9.6) Tips are a spawned list (each window has its own copies), so a friend's tip click is HUD_LOCAL: their
+  window runs tipCuezButton on its own copies (0.9.5 sent it to the host, which faded the host's tip only). The
+  hover text comes from clientHover's tip step; the tip's HUD entry no longer swallows it.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.

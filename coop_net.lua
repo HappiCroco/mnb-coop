@@ -15,7 +15,7 @@ local profile = require("includes/mods/mnb_coop/coop_profile")
 
 local net = {}
 
-net.VERSION = "0.9.5" -- co-op protocol; must match on both sides
+net.VERSION = "0.9.6" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
 net.MAX_SEATS = 3     -- up to 3 players for now (owner, 2026-11-11); 4 players with 3 soldiers each comes later
 net.SEAT_COLORS = { { 101, 24, 24 }, { 40, 90, 160 }, { 70, 130, 50 }, { 190, 140, 30 } }

@@ -145,6 +145,15 @@ check(mouseOverId2 == 77 and mouseOverId == -99, "hovering a vehicle shows its c
 love.mouse.getPosition = function() return 600 - 1000, 300 end
 squad.clientHover()
 check(mouseOverText == "Beer!" and mouseOverId2 == -99, "hovering loot shows what it is")
+-- a tip bubble: its text shows on hover, even with its click area in the HUD list
+tipCueText = { [14] = "Tip fourteen" }
+function displayContextualTip(n) contextualText = tipCueText[n] end
+player.tipCue = { { msg = 14, x = 800, y = 300, alpha = 255, fading = 0 } }
+squad.hudButtons = { { X = 775, Y = 275, width = 30, height = 30, label = "tipCuez", mouseOverText = "" } }
+love.mouse.getPosition = function() return 790 - 1000, 290 end
+squad.clientHover()
+check(contextualText == "Tip fourteen", "hovering a tip shows its text (" .. tostring(contextualText) .. ")")
+squad.hudButtons, player.tipCue = {}, {}
 -- face bar name
 showFaces = 1
 love.mouse.getPosition = function() return 60 * 3 + 10, 680 end -- third face
@@ -516,8 +525,9 @@ squad.hostRunOrders()
 check(armedGun == 57 and (gunFor == 3 or gunFor == 4), "her click on a soldier hands him the gun (troop button)")
 squad.setGameRelease(fakeRelease)
 -- tips on the map: a friend may click one away
-function tipCuezButton() end
-check(squad.hudLabelOk("tipCuez") and squad.isHudLabel("tipCuez"), "a tip click is allowed (tipCuezButton)")
+-- tips on the map: each window has its own, so a friend's click fades theirs, not the host's
+check(squad.isHudLabel("tipCuez") and squad.HUD_LOCAL.tipCuez and not squad.hudLabelOk("tipCuez"),
+  "a tip click is the friend's own (not sent to the host)")
 
 -- ---- face swap (host)
 local a3, a4 = T[3], T[4]
