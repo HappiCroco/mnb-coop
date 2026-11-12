@@ -260,6 +260,20 @@ r = love.graphics.getBackgroundColor()
 check(r == 0, "landed: background black again")
 mp.gainz, mp.landed, mp.beachFade, mp.gameState = saved[1], saved[2], saved[3], saved[4]
 
+-- the host pauses (Esc): friends get a PAUSED banner; their own game isn't paused
+player = hostP
+pause = 1
+local pmsg = T.capture(st)
+pmsg.t, pmsg.view = "snap", T.viewState()
+pause = 0 -- the friend's own pause, before the update arrives
+send(pmsg)
+check(T.getClient().hostPaused == true and pause == 0, "host paused: the friend's window shows it, their own game keeps running")
+player = hostP
+local umsg = T.capture(st)
+umsg.t, umsg.view = "snap", T.viewState()
+send(umsg)
+check(T.getClient().hostPaused == false, "host resumed: the banner goes")
+
 -- mission-end page: the host's page and its animation timers, nothing else
 player = hostP
 hostP.gameState = 1
