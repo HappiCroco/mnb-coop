@@ -277,7 +277,12 @@ check(box3Timer == 2.5 and tempMVPName == "Pvt. Test", "debrief timers arrive")
 check(type(love) == "table", "a forged global name is refused")
 hostP.gameState = 0
 
--- end of battle restores the real player
+-- the friend leaves the report on their own (Back), before the host does
+battle.leaveReport()
+check(not battle.viewing and player == clientReal, "friend left the mission report: back in their own game, no waiting")
+send({ t = "snap", players = {} }) -- the host still on its report: ignored
+check(not battle.viewing, "the host's report updates don't pull them back")
+-- end of battle restores the real player (here: already done; must stay harmless)
 send({ t = "bend" })
 check(box3Timer == 0, "friend's own timer global restored after leaving")
 check(bg == hostBg, "client's own background global restored")

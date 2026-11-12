@@ -260,6 +260,10 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - (v0.9.7) Mission report hover on friends' windows: the game's menu pass (buttonUpdateMenu) never runs there, so
   `squad.reportHoverText` rebuilds page 4/5's hover areas in the game's order (Back, then per slot 1..6 the name and
   the new awards, urb_engine.lua:8235-8303) and clientHover runs in the debrief too.
+- (v0.9.7) Friends leave the mission report when they like (owner: "be able to back whenever they want and not wait
+  for the host"): Back on the report (32,686 60x30) → `battle.leaveReport` → stopView, back to the lobby, still in
+  the session. The host's later report snaps are ignored (no view); its next battle's `bfull` brings them in again;
+  their results arrive when the host leaves its report and are applied at once (not watching).
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.

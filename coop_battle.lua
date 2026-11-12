@@ -971,6 +971,15 @@ function battle.stopView(why)
     log("stopped watching (%s)", tostring(why))
 end
 
+-- Client: Back on the mission report. This friend is done with it: back to the lobby
+-- now, still in the session; the host's next battle brings them in again (its "bfull").
+-- Their soldiers' results come from the host when it leaves the report, as before.
+function battle.leaveReport()
+    if not battle.inDebrief() then return end
+    pcall(function() clickSound:clone():play() end)
+    battle.stopView("you left the mission report; you'll join the host's next battle")
+end
+
 -- Messages from the host (net.onHostMessage).
 function battle.onHostMessage(msg)
     if msg.t == "z" then
@@ -1207,7 +1216,7 @@ function battle.drawOverlay()
     local sub = "Esc twice to leave"
     if battle.inDebrief() then
         text = C.hostName:upper() .. "'S MISSION REPORT"
-        sub = "The host continues for everyone. Esc twice to leave"
+        sub = "Back: return to the lobby whenever you like"
     end
     if battle.leaveAskedAt and love.timer.getTime() - battle.leaveAskedAt < 3 then
         sub = "Press Esc again to leave the co-op session"
