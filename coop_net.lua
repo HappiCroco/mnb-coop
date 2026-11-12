@@ -15,7 +15,7 @@ local profile = require("includes/mods/mnb_coop/coop_profile")
 
 local net = {}
 
-net.VERSION = "0.9.7" -- co-op protocol; must match on both sides
+net.VERSION = "0.9.8" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
 -- enet peer timeout (ms): give up on a peer after `min` once its unanswered packets have
 -- been resent the limit, and after `max` in any case. Was 3000/8000 (a crashed game noticed
@@ -45,16 +45,22 @@ local myJoinCode = nil  -- client: the code we join with
 net.joinCode = nil      -- host: code joiners must give (nil = open lobby)
 net.blocked = 0         -- host: connections the guard has thrown out
 
--- A co-op option: modLibrary if it's installed, else GMenu's saved value, else `default`
--- (the same default as config.lua). Co-op works without modLibrary.
+-- A co-op option: modLibrary if it's installed, else the menu's saved value (QuarterMaster 1.8's
+-- QM.settings, or the old standalone GMenu's), else `default` (the same default as config.lua).
+-- Co-op works without modLibrary and without a menu.
 function net.option(id, default)
     local v
     if modLibrary and modLibrary.option then
         v = modLibrary.option("mnb_coop", id)
     else
-        local gm = rawget(_G, "GMenu")
-        local saved = gm and gm.savedSettings and gm.savedSettings.mnb_coop
-        if saved then v = saved[id] end
+        local qm = rawget(_G, "QM")
+        local qs = type(qm) == "table" and type(rawget(qm, "settings")) == "table" and qm.settings.mnb_coop
+        if type(qs) == "table" then v = qs[id] end
+        if v == nil then
+            local gm = rawget(_G, "GMenu")
+            local saved = gm and gm.savedSettings and gm.savedSettings.mnb_coop
+            if saved then v = saved[id] end
+        end
     end
     if v == nil then return default end
     return v

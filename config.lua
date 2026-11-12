@@ -1,4 +1,5 @@
--- GMenu options for Mud and Blood Co-op (read at runtime with modLibrary.option("mnb_coop", id)).
+-- Options for Mud and Blood Co-op, shown on QuarterMaster 1.8's Mod Options screen (or the old GMenu's).
+-- QM reads this file as text: plain tables only, no functions. Read at runtime with net.option(id).
 return {
     name = "Co-op",
     options = {

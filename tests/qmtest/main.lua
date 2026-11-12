@@ -109,5 +109,23 @@ reset()
 love.keypressed("a")
 check(same(log, { "coop", "game" }), "QM.Input not in front: a plain wrap")
 
+-- 5. options: QM 1.8 keeps the player's choice in QM.settings[<mod id>] (GMenu is gone); net.option reads
+-- it when modLibrary isn't installed, then the old GMenu's saved value, then the default
+for _, n in ipairs({ "coop_codec", "coop_profile", "coop_net" }) do
+  package.preload["includes/mods/mnb_coop/" .. n] = function() return assert(loadfile(MOD .. "/" .. n .. ".lua"))() end
+end
+currentVersion = "x"
+modLibrary = nil
+local net = require("includes/mods/mnb_coop/coop_net")
+QM = { settings = { mnb_coop = { syncRate = 60, netStats = true } } }
+check(net.option("syncRate", 30) == 60, "QM 1.8 settings: the chosen rate is used")
+check(net.isOn("netStats", false), "QM 1.8 settings: a checkbox stored as true is on")
+check(net.option("port", 47913) == 47913, "QM 1.8 settings without the option: the default")
+QM = nil
+GMenu = { savedSettings = { mnb_coop = { syncRate = 45 } } }
+check(net.option("syncRate", 30) == 45, "no QM.settings: the old GMenu's saved value")
+GMenu = nil
+check(net.option("syncRate", 30) == 30, "no menu at all: the default")
+
 print(string.format("%d passed, %d failed", passes, fails))
 love.event.quit(fails == 0 and 0 or 1)

@@ -270,6 +270,11 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   (a friend's game: stack overflow at main.lua:3492 'origMousePressed' on the first click). `coop_qminput.wrap`: if
   QM's handler is in love.*, ours goes into `QM.Input.orig*` (behind it) and love.* stays QM's; otherwise a plain
   wrap (QM 1.4). Test: tests/qmtest.
+- (v0.9.8) GMenu is retired (Gamiseus/MnB-Mods 4edc767, 2026-11-09): QM 1.8 has the menu built in (`QM.Menu`, same
+  allocatePage / PAGE_MOD_OPTIONS 86 / modList / activeModIndex) and still reads config.lua as text (plain tables
+  only). The chosen value is `QM.settings.mnb_coop[id]` (saveModSettings.lua). net.option and modLibrary.option read
+  it first, then GMenu.savedSettings, then the default; the lobby's pages and Options button use QM.Menu, else
+  GMenu. mod.json no longer suggests gmenu.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.

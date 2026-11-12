@@ -120,10 +120,23 @@ local function clipboardAddress()
     return (love.system.getClipboardText() or ""):gsub("[^%w%.%-:_#]", ""):sub(1, 64)
 end
 
+-- The mod menu: QuarterMaster 1.8's built-in QM.Menu, else the old standalone GMenu (QM 1.4).
+-- Both hand out page numbers (allocatePage) and have the Mod Options screen (PAGE_MOD_OPTIONS,
+-- modList, activeModIndex). Nil without either.
+local function modMenu()
+    local qm = rawget(_G, "QM")
+    local m = type(qm) == "table" and rawget(qm, "Menu")
+    if type(m) == "table" then return m end
+    local gm = rawget(_G, "GMenu")
+    if type(gm) == "table" then return gm end
+end
+lobby.modMenu = modMenu
+
 function lobby.getPage()
     if lobby.page then return lobby.page end
-    if GMenu and GMenu.allocatePage then
-        lobby.page = GMenu.allocatePage("mnb_coop", "lobby", nil, nil)
+    local menu = modMenu()
+    if menu and menu.allocatePage then
+        lobby.page = menu.allocatePage("mnb_coop", "lobby", nil, nil)
     else
         lobby.page = 140
     end
@@ -136,8 +149,9 @@ end
 lobby.hubPage = nil
 function lobby.getHubPage()
     if lobby.hubPage then return lobby.hubPage end
-    if GMenu and GMenu.allocatePage then
-        lobby.hubPage = GMenu.allocatePage("mnb_coop", "hub", nil, nil)
+    local menu = modMenu()
+    if menu and menu.allocatePage then
+        lobby.hubPage = menu.allocatePage("mnb_coop", "hub", nil, nil)
     else
         lobby.hubPage = 141
     end
@@ -213,7 +227,7 @@ end
 
 function lobby.registerButtons()
     if menuPage == 1 then
-        -- "Multiplayer" goes right of whatever is on the bottom bar (Quit, GMenu, ...)
+        -- "Multiplayer" goes right of whatever is on the bottom bar (Quit, the mod menu, ...)
         local right = 50
         for _, b in ipairs(buttons) do
             if b.Y and b.Y >= 680 and b.Y <= 690 and b.X + b.width > right then right = b.X + b.width end
@@ -484,14 +498,22 @@ end
 
 function coopOptionsButton()
     click()
-    if GMenu and GMenu.modList and GMenu.PAGE_MOD_OPTIONS then
-        for i, id in ipairs(GMenu.modList) do
-            if id == "mnb_coop" then GMenu.activeModIndex = i end
+    local menu = modMenu()
+    if menu and menu.modList and menu.PAGE_MOD_OPTIONS then
+        local found = false
+        for i, id in ipairs(menu.modList) do
+            if id == "mnb_coop" then menu.activeModIndex = i found = true end
         end
-        menuPage = GMenu.PAGE_MOD_OPTIONS
+        if not found then
+            -- the menu is there but didn't take our config.lua: say so (the log has QM's reason)
+            print("[mnb_coop] options: the mod menu has no mnb_coop entry (config.lua not loaded)")
+            net.status = "The mod menu didn't load the co-op options (see QuarterMaster's log)"
+            return
+        end
+        menuPage = menu.PAGE_MOD_OPTIONS
         mouseOverText = ""
     else
-        net.status = "Install GMenu to change co-op options"
+        net.status = "Update QuarterMaster (1.8 or newer) to change co-op options"
     end
 end
 
