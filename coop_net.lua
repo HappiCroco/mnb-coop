@@ -15,7 +15,7 @@ local profile = require("includes/mods/mnb_coop/coop_profile")
 
 local net = {}
 
-net.VERSION = "0.9.3" -- co-op protocol; must match on both sides
+net.VERSION = "0.9.4" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
 net.MAX_SEATS = 3     -- up to 3 players for now (owner, 2026-11-11); 4 players with 3 soldiers each comes later
 net.SEAT_COLORS = { { 101, 24, 24 }, { 40, 90, 160 }, { 70, 130, 50 }, { 190, 140, 30 } }
@@ -109,13 +109,68 @@ function net.pings()
 end
 
 -- ---------------------------------------------------------------- sending
+-- Every packet on the wire stays under CHUNK bytes. enet splits a bigger one into
+-- fragments of its own MTU (1400 + headers), and on some routes (a playit.gg tunnel,
+-- PPPoE, a VPN) packets that size never arrive: small ones get through, so the join
+-- works, but the first big message (an avatar) never completes, and since channel 0 is
+-- reliable and ordered, nothing after it arrives either (owner, 2026-11-11: a friend on
+-- another PC sat "Connected" with 0/3 players). So we split big messages ourselves:
+--   "\0<total>:<first piece>" then "\0<piece>"..., in order on the same channel,
+-- reassembled before decoding. A codec message never starts with "\0".
+local CHUNK = 1000
+net.CHUNK = CHUNK
+
+local function put(peer, data, channel)
+    channel = channel or 0
+    if #data <= CHUNK then
+        peer:send(data, channel, "reliable")
+    else
+        local head = "\0" .. #data .. ":"
+        local first = CHUNK - #head
+        peer:send(head .. data:sub(1, first), channel, "reliable")
+        for i = first + 1, #data, CHUNK - 1 do
+            peer:send("\0" .. data:sub(i, i + CHUNK - 2), channel, "reliable")
+        end
+    end
+    statWindow.msgsOut = statWindow.msgsOut + 1
+end
+net._put = put
+
+-- Receiving: returns the whole message once its last piece is in (nil before), or
+-- nil, "bad" for a malformed or too-big one. `pending` is per peer and channel.
+local pending = setmetatable({}, { __mode = "k" })
+local function reassemble(peer, channel, data, maxTotal)
+    if data:byte(1) ~= 0 then return data end
+    local byPeer = pending[peer]
+    if not byPeer then byPeer = {} pending[peer] = byPeer end
+    local p = byPeer[channel]
+    if not p then
+        local total, rest = data:match("^%z(%d+):(.*)$")
+        total = tonumber(total)
+        if not total or total <= CHUNK or total > maxTotal then return nil, "bad" end
+        p = { total = total, got = #rest, parts = { rest } }
+        byPeer[channel] = p
+    else
+        local piece = data:sub(2)
+        p.parts[#p.parts + 1] = piece
+        p.got = p.got + #piece
+    end
+    if p.got > p.total then
+        byPeer[channel] = nil
+        return nil, "bad"
+    end
+    if p.got == p.total then
+        byPeer[channel] = nil
+        return table.concat(p.parts)
+    end
+    return nil
+end
+net._reassemble = reassemble
+
 local function send(peer, msg, channel)
     if not peer then return end
     local ok, data = pcall(codec.encode, msg)
-    if ok then
-        peer:send(data, channel or 0, "reliable")
-        statWindow.msgsOut = statWindow.msgsOut + 1
-    end
+    if ok then put(peer, data, channel) end
 end
 
 local function broadcast(msg, except)
@@ -128,17 +183,13 @@ end
 function net.sendRawTo(seat, data, channel)
     local peer = seatPeer[seat]
     if not peer then return end
-    peer:send(data, channel or 0, "reliable")
-    statWindow.msgsOut = statWindow.msgsOut + 1
+    put(peer, data, channel)
 end
 
 -- skipSeats: optional set of seats that don't get this one
 function net.broadcastRaw(data, channel, skipSeats)
     for seat, peer in pairs(seatPeer) do
-        if not (skipSeats and skipSeats[seat]) then
-            peer:send(data, channel or 0, "reliable")
-            statWindow.msgsOut = statWindow.msgsOut + 1
-        end
+        if not (skipSeats and skipSeats[seat]) then put(peer, data, channel) end
     end
 end
 
@@ -195,13 +246,23 @@ local function strike(peer, why)
     if g.strikes >= GUARD.MAX_STRIKES then drop(peer, "too much junk (" .. why .. ")") end
 end
 
--- true if this packet may be looked at
-local function admit(peer, size)
+-- true if this packet may be looked at. A piece of a split message counts its bytes;
+-- the message itself counts once, when it's whole (`size` = its full size).
+local function admit(peer, size, piece)
     local g = guard[peer]
     if not g then return false end
     local now = love.timer.getTime()
     if now - g.window >= 1 then g.window, g.msgs, g.bytes = now, 0, 0 end
-    g.msgs, g.bytes = g.msgs + 1, g.bytes + size
+    if piece then
+        g.bytes = g.bytes + size
+        if g.bytes > GUARD.MAX_BYTES then
+            drop(peer, "flooding")
+            return false
+        end
+        return true
+    end
+    g.msgs = g.msgs + 1
+    if size <= CHUNK then g.bytes = g.bytes + size end -- (a reassembled one's bytes were counted piece by piece)
     if g.msgs > GUARD.MAX_MSGS or g.bytes > GUARD.MAX_BYTES then
         drop(peer, "flooding")
         return false
@@ -573,8 +634,17 @@ function net.update()
         elseif ev.type == "receive" then
             countIn()
             if net.role == "host" then
-                if admit(ev.peer, #ev.data) then
-                    local msg = codec.decode(ev.data)
+                local data, bad = ev.data, nil
+                if data:byte(1) == 0 then
+                    if admit(ev.peer, #data, true) then
+                        data, bad = reassemble(ev.peer, ev.channel or 0, data, GUARD.MAX_PACKET)
+                        if bad then strike(ev.peer, "bad piece") end
+                    else
+                        data = nil
+                    end
+                end
+                if data and admit(ev.peer, #data) then
+                    local msg = codec.decode(data)
                     if type(msg) == "table" and type(msg.t) == "string" then
                         hostReceive(ev.peer, msg)
                     else
@@ -582,8 +652,11 @@ function net.update()
                     end
                 end
             elseif ev.peer == server then
-                local msg = codec.decode(ev.data, codec.HOST_LIMITS) -- battle state is big
-                if type(msg) == "table" and type(msg.t) == "string" then clientReceive(msg) end
+                local data = reassemble(ev.peer, ev.channel or 0, ev.data, codec.HOST_LIMITS.string)
+                if data then
+                    local msg = codec.decode(data, codec.HOST_LIMITS) -- battle state is big
+                    if type(msg) == "table" and type(msg.t) == "string" then clientReceive(msg) end
+                end
             end
         elseif ev.type == "disconnect" then
             if net.role == "host" then
