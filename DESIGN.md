@@ -290,6 +290,10 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   defense.update: any German appearing without a side inside the zone moves to its side's edge. Loading a battle
   under way gives the Germans already there a side first, so they're not moved.
 - Ownership: the Classic dealing from v0.8.0 (start soldiers in turn, recruits = recruiter's, TP shared).
+- (v0.9.3) TP income doubled in co-op Classic with friends (owner: the shared pool was too tight for two fronts):
+  `giveTp` wrapped (mnb_coop_main.lua), host only. The cap (20 + ribbons) isn't raised, so spend it or lose it.
+  The radar can't be destroyed: the game's `destruction()` (particlesSystem.lua:7028) removes placeables by exact
+  name only, and nothing else removes `coopRadar`.
 - After the battle, Back on the end page → the Multiplayer screen.
 - (v0.9.1) The clearing: everything within 260 px of the radar is removed at setup (trees, rocks, placeables,
   leaves, mines, groundType, deco); a building reaching into it goes whole with the pieces within its radius;

@@ -211,6 +211,19 @@ function coopSizeLimit()
     return coopSquadMax and coopSquadMax() or 6
 end
 
+-- TP income in co-op Classic with friends: double (owner, 2026-11-11). The pool and its
+-- cap (20 + ribbons, giveTp at mnb2.lua:894) stay shared, so it fills faster but doesn't
+-- grow. giveTp is the game's one income path (kills, waves, loot, special waves); only
+-- the sitrep bonus (ai.lua:6157) adds TP without it.
+local coopGiveTp = giveTp
+function giveTp(nbr, ...)
+    if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameType == 1
+        and type(nbr) == "number" then
+        nbr = nbr * 2
+    end
+    return coopGiveTp(nbr, ...)
+end
+
 -- A face click on the host doesn't open a friend's soldier's promotion panel: they choose.
 iconClick = squad.wrapIconClick(iconClick)
 
