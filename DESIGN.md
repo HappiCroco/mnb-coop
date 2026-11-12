@@ -269,6 +269,10 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - Waves with friends (owner, 2026-11-11: "make it double"): every German infantryman a wave makes stays right and
   gets a twin mirrored to the left (copy of his tables, new random id), so each side faces the full wave. Solo
   defense keeps the split below.
+- German support, two fronts (`defense.frontLines()` = westmost, eastmost friendly soldier; `mirrorX` mirrors a
+  point around their middle, so "front + 1000" east becomes "front - 1000" west): fjDrop paratroopers drop on both
+  fronts with friends (alternate solo); germanArtyPrefire / preAirBurst aimed exactly at alliedFrontLine() alternate
+  fronts (strikes called on a spot stay put). Strafes (axisStrafe) stay east: the plane flies right to left.
 - Waves solo: spawnMNB2Wave wrapped; every other German it makes is mirrored to the left flank (same distance west of the
   westmost player as the game put him east of the eastmost). `coopSide` "L"/"R" on every German; any German that
   appears without one (map, paradrop, crews, frontal assault) gets the side he's on. Vehicles all stay right

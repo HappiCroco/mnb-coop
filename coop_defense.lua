@@ -252,6 +252,53 @@ function defense.wrapWave(orig)
     end
 end
 
+-- ---------------------------------------------------------------- German support from both sides
+-- The game aims its German support at alliedFrontLine() (the eastmost friendly soldier).
+-- In the defense there are two fronts: defense.frontLines() gives both (west, east), and
+-- mirrorX maps a point past the east front to the same distance past the west one
+-- (a mirror around the middle of our soldiers).
+function defense.frontLines() return alliedSpan() end
+
+local function mirrorX(x)
+    local lo, hi = alliedSpan()
+    return math.max(defense.LEFT_EDGE + 200, math.floor(lo + hi - x))
+end
+defense.mirrorX = mirrorX
+
+defense.strikeFlip = 0
+local function nextGoesLeft()
+    defense.strikeFlip = defense.strikeFlip + 1
+    return defense.strikeFlip % 2 == 0
+end
+
+-- German paratroopers (fjDrop(x, y), x = front + 0/600/1000, urb_engine.lua:16046): with
+-- friends they drop on both sides, like the waves; solo, every other drop goes left.
+function defense.wrapFjDrop(orig)
+    return function(x, y, ...)
+        if not defense.active() or type(x) ~= "number" then return orig(x, y, ...) end
+        if net.playerCount() > 1 then
+            orig(x, y, ...)
+            return orig(mirrorX(x), y, ...)
+        end
+        if nextGoesLeft() then x = mirrorX(x) end
+        return orig(x, y, ...)
+    end
+end
+
+-- German artillery and airbursts aimed at the front line (germanArtyPrefire / preAirBurst
+-- with x == alliedFrontLine(), e.g. mnb2.lua:5446-5452, size control): every other one
+-- falls on the west front. Strikes called on a spot (a spotter's target) stay where they are.
+-- (Strafing runs stay on the east: the plane flies right to left.)
+function defense.wrapFrontStrike(orig)
+    return function(x, ...)
+        if defense.active() and type(x) == "number" and type(alliedFrontLine) == "function"
+            and math.abs(x - alliedFrontLine()) < 1 and nextGoesLeft() then
+            x = mirrorX(x)
+        end
+        return orig(x, ...)
+    end
+end
+
 -- ---------------------------------------------------------------- the German AI, mirrored for the left side
 -- moveForward (urb_engine.lua:19206): forward is x + 100..600 for the left side
 function defense.wrapMoveForward(orig)

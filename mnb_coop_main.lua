@@ -32,6 +32,9 @@ moveForward = defense.wrapMoveForward(moveForward)
 axisRetreat = defense.wrapRetreat(axisRetreat)
 axisInFront = defense.wrapInFront(axisInFront)
 axisAdvance = defense.wrapAdvance(axisAdvance)
+fjDrop = defense.wrapFjDrop(fjDrop)                         -- German paratroopers: both fronts
+germanArtyPrefire = defense.wrapFrontStrike(germanArtyPrefire) -- front-line artillery: alternate fronts
+preAirBurst = defense.wrapFrontStrike(preAirBurst)
 local coopPreMNB2 = preMNB2Admin
 function preMNB2Admin(...)
     -- a new field, or a battle under way being loaded (mnb2.lua:7, 262)

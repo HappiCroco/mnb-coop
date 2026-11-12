@@ -155,6 +155,26 @@ mf(gL)
 check(gL.targetx == gL.x, "fire ahead: no advance")
 function fireInFront() return 0 end
 
+-- German support from both fronts (squad ring: west front 6210, east front 6390)
+local lo2, hi2 = defense.frontLines()
+check(lo2 == 6210 and hi2 == 6390, "the two fronts: westmost and eastmost of our soldiers (" .. lo2 .. ", " .. hi2 .. ")")
+check(defense.mirrorX(hi2 + 1000) == lo2 - 1000, "1000 past the east front mirrors to 1000 past the west front")
+local drops = {}
+local fj = defense.wrapFjDrop(function(x, y) drops[#drops + 1] = x end)
+fj(hi2 + 1000, 360) fj(hi2 + 1000, 360)
+check(drops[1] == hi2 + 1000 and drops[2] == lo2 - 1000, "solo: paratroopers alternate fronts")
+net.seats = { { name = "Host" }, { name = "Ann" } }
+drops = {}
+fj(hi2 + 1000, 360)
+check(#drops == 2 and drops[1] == hi2 + 1000 and drops[2] == lo2 - 1000, "with friends: a drop on each front")
+net.seats = {}
+function alliedFrontLine() return hi2 end
+local shells = {}
+local arty = defense.wrapFrontStrike(function(x) shells[#shells + 1] = x end)
+defense.strikeFlip = 0
+arty(hi2, 200) arty(hi2, 200) arty(5000, 200)
+check(shells[1] == hi2 and shells[2] == lo2 and shells[3] == 5000, "front-line artillery alternates; a strike on a spot stays put")
+
 -- friendly arrivals: the game puts them at the far left; they come in at the radar from above/below
 player.deployedVehicles = player.deployedVehicles or {}
 local rookie = troop("allied", 10, 360, 1) rookie.targetx = 6000
