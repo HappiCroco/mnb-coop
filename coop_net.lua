@@ -246,14 +246,15 @@ local function strike(peer, why)
     if g.strikes >= GUARD.MAX_STRIKES then drop(peer, "too much junk (" .. why .. ")") end
 end
 
--- true if this packet may be looked at. A piece of a split message counts its bytes;
--- the message itself counts once, when it's whole (`size` = its full size).
-local function admit(peer, size, piece)
+-- true if this packet may be looked at. kind "piece": a piece of a split message, counts
+-- its bytes; kind "whole": that message once it's reassembled, counts once as a message
+-- (its bytes were counted piece by piece); otherwise a plain packet counts both.
+local function admit(peer, size, kind)
     local g = guard[peer]
     if not g then return false end
     local now = love.timer.getTime()
     if now - g.window >= 1 then g.window, g.msgs, g.bytes = now, 0, 0 end
-    if piece then
+    if kind == "piece" then
         g.bytes = g.bytes + size
         if g.bytes > GUARD.MAX_BYTES then
             drop(peer, "flooding")
@@ -262,7 +263,7 @@ local function admit(peer, size, piece)
         return true
     end
     g.msgs = g.msgs + 1
-    if size <= CHUNK then g.bytes = g.bytes + size end -- (a reassembled one's bytes were counted piece by piece)
+    if kind ~= "whole" then g.bytes = g.bytes + size end
     if g.msgs > GUARD.MAX_MSGS or g.bytes > GUARD.MAX_BYTES then
         drop(peer, "flooding")
         return false
@@ -642,16 +643,17 @@ function net.update()
         elseif ev.type == "receive" then
             countIn()
             if net.role == "host" then
-                local data, bad = ev.data, nil
+                local data, bad, kind = ev.data, nil, nil
                 if data:byte(1) == 0 then
-                    if admit(ev.peer, #data, true) then
+                    kind = "whole"
+                    if admit(ev.peer, #data, "piece") then
                         data, bad = reassemble(ev.peer, ev.channel or 0, data, GUARD.MAX_PACKET)
                         if bad then strike(ev.peer, "bad piece") end
                     else
                         data = nil
                     end
                 end
-                if data and admit(ev.peer, #data) then
+                if data and admit(ev.peer, #data, kind) then
                     local msg = codec.decode(data)
                     if type(msg) == "table" and type(msg.t) == "string" then
                         hostReceive(ev.peer, msg)

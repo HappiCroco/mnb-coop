@@ -500,6 +500,17 @@ local function withdrawn()
     end
 end
 
+-- a German standing where a German vehicle is (within 200 px): he got out of it
+function defense.fromVehicle(t)
+    for _, v in ipairs(player.deployedVehicles or {}) do
+        if type(v) == "table" and v.faction == "axis" and type(v.x) == "number" and type(v.y) == "number"
+            and (v.x - t.x) ^ 2 + (v.y - t.y) ^ 2 < 200 * 200 then
+            return true
+        end
+    end
+    return false
+end
+
 -- ---------------------------------------------------------------- every frame (host or solo)
 -- Before the game's frame: new Germans get a side by where they are, the left ones
 -- are kept off the game's own miss line, and a German at the radar scores.
@@ -514,7 +525,9 @@ function defense.update()
             if t.coopSide == nil then
                 -- a German the game just put down: never inside the radar's clear zone
                 t.coopSide = t.x < rx and "L" or "R"
-                if (t.dead or 0) == 0 and math.abs(t.x - rx) < defense.SPAWN_CLEAR then
+                -- (except men getting out of a German vehicle that drove up: a halftrack's
+                -- squad or a knocked-out tank's crew, ai.lua:4265/4386/4430, urb_engine.lua:11611)
+                if (t.dead or 0) == 0 and math.abs(t.x - rx) < defense.SPAWN_CLEAR and not defense.fromVehicle(t) then
                     defense.placeAt(t, defense.outsideClear(t.x, t.coopSide))
                 end
             end
