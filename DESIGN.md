@@ -278,6 +278,25 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   never fires for them. Jagers/zombies don't score (as in the game).
 - Ownership: the Classic dealing from v0.8.0 (start soldiers in turn, recruits = recruiter's, TP shared).
 - After the battle, Back on the end page → the Multiplayer screen.
+- (v0.9.1) The clearing: everything within 260 px of the radar is removed at setup (trees, rocks, placeables,
+  leaves, mines, groundType, deco); a building reaching into it goes whole with the pieces within its radius;
+  roads, bgPatch and loot stay; `decoStart` is lowered by the deco removed (the game trims battle deco after it).
+- (v0.9.1) Friendly arrivals come in at the radar: the game puts hired soldiers at x 10 (mnb2CallReinfButton,
+  mnb2.lua:4972) and bought vehicles at the left edge; any allied soldier or vehicle that first appears left of
+  x 600 is moved to the radar's x (±150, vehicles ±250) at the top or bottom edge (alternating, like the horse
+  cart, germanSideCart mnb2.lua:6761) and walks/drives to the radar. What's on the map at setup is left alone.
+- (v0.9.1, review fixes) Loading a Classic battle under way (preMNB2Admin with ui_gameStarted ~= 0) doesn't redo the
+  layout; it's a defense again if its `coopRadar` is there. Tactical withdrawal in the defense leaves by the nearest
+  top/bottom edge (patch on ai.lua:1690 → defense.withdraw), then the game's own take-off at x < 100 (refund chance
+  kept). Left Germans sidestep fire like the game's moveForward. Fixed an `a and b or c` trap in wrapAdvance.
+- (v0.9.1, review fixes) Friends' moves no longer close the host's open promotion/skill panel (panel globals saved
+  in the replay). Battle-ending or whole-team HUD buttons (mnb2Retreat, trenchRetreatz, trenchUp, trenchRetreat) are
+  host-only. Up to 40 soldiers per order (Classic armies).
+- (v0.9.1) Size control (Classic's big-squad punishment, urb_engine.lua:6022-6026) in a co-op Classic battle
+  with friends: starts above 12 soldiers for the whole team instead of 6, and its ten-times step above 24
+  instead of 12 (owner: "make it 12", three each). `coopSizeLimit()` in mnb_coop_main.lua; solo stays 6/12.
+- (v0.9.1) Friends' windows start the Classic background loop themselves (bgSound / cologne / night): the host
+  starts it in preMNB2Admin, before the sync runs, so it never reached them.
 - Ideas for later: vehicles from the left too (needs the vehicle rotation rules mirrored), a points-lost counter of
   its own, radar sprite of our own.
 - Each troop gets `coopSeat` (1 = host). Units a player recruits are theirs; the host's starting squad can be split.

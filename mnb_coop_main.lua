@@ -34,8 +34,10 @@ axisInFront = defense.wrapInFront(axisInFront)
 axisAdvance = defense.wrapAdvance(axisAdvance)
 local coopPreMNB2 = preMNB2Admin
 function preMNB2Admin(...)
+    -- a new field, or a battle under way being loaded (mnb2.lua:7, 262)
+    local fresh = not (type(player) == "table" and player.ui_gameStarted ~= 0 and player.ui_gameStarted ~= nil)
     local result = coopPreMNB2(...)
-    local ok, err = pcall(defense.afterSetup)
+    local ok, err = pcall(defense.afterSetup, fresh)
     if not ok then print("[mnb_coop] defense setup: " .. tostring(err)) end
     return result
 end
@@ -189,6 +191,16 @@ function buttonEngine(...)
     local ok, err = pcall(squad.hostAfterButtonEngine)
     if not ok then print("[mnb_coop] squad keys: " .. tostring(err)) end
     return result
+end
+
+-- Classic's big-squad punishment (size control, urb_engine.lua:6022) starts above this
+-- many soldiers (qm.toml patch). The game's 6 is one player's; a co-op Classic battle
+-- with friends allows 12 for the whole team (owner, 2026-11-11). Campaign: its squad size.
+function coopSizeLimit()
+    if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameType == 1 then
+        return 12
+    end
+    return coopSquadMax and coopSquadMax() or 6
 end
 
 -- A face click on the host doesn't open a friend's soldier's promotion panel: they choose.

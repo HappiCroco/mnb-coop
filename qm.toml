@@ -1,6 +1,6 @@
 # Mud and Blood Co-op. Standalone; GMenu (optional) gives it an options page and a page number.
 [manifest]
-version = "0.9.0"
+version = "0.9.1"
 priority = 80
 
 [[patches]]
@@ -121,6 +121,23 @@ if mnbCoop and mnbCoop.squad then mnbCoop.squad.drawOwnerRing(soldier) end
 match_indent = true
 times = 1
 
+# Co-op defense: a soldier on a tactical withdrawal (tacDraw) walks to the left edge
+# every frame here (ai.lua:1690); in the defense he leaves by the nearest top/bottom
+# edge instead (coop_defense.lua, defense.withdraw).
+[[patches]]
+[patches.pattern]
+target = "includes/ai.lua"
+pattern = '''
+if(player.deployedTroops[i].tacDraw > 0) then
+player.deployedTroops[i].targetx = -500
+'''
+position = "after"
+payload = '''
+if mnbCoop and mnbCoop.defense then mnbCoop.defense.withdraw(player.deployedTroops[i]) end
+'''
+match_indent = true
+times = 1
+
 # ---------------------------------------------------------------------------
 # Co-op campaign squad: the 6 are shared out now; above-6 squads (4 players x 3,
 # later) need these. The game's "6" squad checks ask coopSquadMax() instead; it
@@ -152,14 +169,25 @@ root_capture = "n"
 position = "at"
 payload = "(coopSquadMax and coopSquadMax() or 6)"
 
-# Size control (classic big-squad punishment) starts above a full squad.
+# Size control (classic big-squad punishment: random artillery, WP, airbursts,
+# strafes) starts above a full squad; co-op Classic with friends: above 12 (owner,
+# 2026-11-11: "three for each player"). See coopSizeLimit in mnb_coop_main.lua.
 [[patches]]
 [patches.regex]
 target = "includes/urb_engine.lua"
 pattern = 'if\(squadSizer\(\) > (?P<n>6)\) then'
 root_capture = "n"
 position = "at"
-payload = "(coopSquadMax and coopSquadMax() or 6)"
+payload = "(coopSizeLimit and coopSizeLimit() or 6)"
+
+# ...and it gets ten times as likely above twice that (the game's 12; co-op: 24).
+[[patches]]
+[patches.regex]
+target = "includes/urb_engine.lua"
+pattern = 'if\(funkMasterFlex > (?P<n>12)\) then'
+root_capture = "n"
+position = "at"
+payload = "(coopSizeLimit and coopSizeLimit() * 2 or 12)"
 
 # "Full squad" voice line.
 [[patches]]

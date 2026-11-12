@@ -1065,12 +1065,29 @@ function battle.inDebrief()
     return C ~= nil and type(player) == "table" and player.gameState ~= 0
 end
 
+-- The Classic battle's background loop (gunfire in the distance) starts while the host
+-- sets the battle up (mnb2.lua:369-377), before the sync runs, so it never reaches a
+-- friend. Their window starts the game's own loop once, as the game would have.
+function battle.startBackground()
+    if not C or C.bgStarted or type(player) ~= "table" or player.gameType ~= 1 or player.gameState ~= 0 then return end
+    C.bgStarted = true
+    local src = rawget(_G, "bgSound")
+    if player.mnb2SubGame == 99 then
+        if specialEvent == "Cologne" then src = rawget(_G, "cologneBGSound")
+        elseif specialEvent == "Halloween" then src = rawget(_G, "nightBgSound") end
+    end
+    if type(src) ~= "userdata" or not rawPlay then return end
+    pcall(src.setLooping, src, true)
+    pcall(rawPlay, src)
+end
+
 function battle.clientUpdate(dt)
     if not C then return end
     if battle.inDebrief() then
         player.screenx, player.screeny = 0, 0 -- its timers and fades come from the host
         return
     end
+    battle.startBackground()
     local now = love.timer.getTime()
     for el, it in pairs(C.interp) do
         local a = math.min(1, (now - it.t0) / C.interval)

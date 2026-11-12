@@ -84,10 +84,73 @@ local function sendLeft(t, x)
     if type(t.trenchHome) == "number" then t.trenchHome = x end
 end
 
+-- ---------------------------------------------------------------- the clearing
+-- Owner's rule: the ground around the radar is cleared, so the defenders have an
+-- open position. Map lists from createMNB2Map (mapBuild.lua:1362): trees (forest),
+-- rocks, placeables (bushes, wire, crates, sandbags...), leaves, mines (mineField),
+-- ground patches (groundType: mud, water, floors) and deco. A building that reaches
+-- into the clearing goes whole, with its walls, floor and roof pieces around it
+-- (they sit in placeables/groundType/deco within its radius). Roads, the ground
+-- texture (bgPatch) and loot stay.
+defense.CLEAR_RADIUS = 260
+local CLEAR_LISTS = { "forest", "rocks", "placeables", "leaves", "mineField", "groundType", "deco" }
+
+local function within(e, x, y, r)
+    return type(e) == "table" and type(e.x) == "number" and type(e.y) == "number"
+        and (e.x - x) ^ 2 + (e.y - y) ^ 2 < r * r
+end
+
+local function removeWhere(list, keep)
+    if type(list) ~= "table" then return 0 end
+    local n = 0
+    for i = #list, 1, -1 do
+        if not keep(list[i]) then
+            table.remove(list, i)
+            n = n + 1
+        end
+    end
+    return n
+end
+
+function defense.clearAround(cx, cy, r)
+    local spots = { { cx, cy, r } } -- areas to empty: the clearing, plus each building that reaches into it
+    local nb = removeWhere(player.buildings, function(b)
+        if type(b) ~= "table" or type(b.x) ~= "number" then return true end
+        local br = tonumber(b.radius) or 200
+        if within(b, cx, cy, r + br) then
+            spots[#spots + 1] = { b.x, b.y, br }
+            return false
+        end
+        return true
+    end)
+    local n = 0
+    for _, name in ipairs(CLEAR_LISTS) do
+        local gone = removeWhere(player[name], function(e)
+            if type(e) == "table" and (e.name == "coopRadar" or e.name == "coopRadarTop") then return true end
+            for _, s in ipairs(spots) do
+                if within(e, s[1], s[2], s[3]) then return false end
+            end
+            return true
+        end)
+        -- the map's deco is counted in decoStart (mnb2.lua:257); the game trims only
+        -- what comes after it (battle mess, urb_engine.lua:6171), so keep the count true
+        if name == "deco" and tonumber(player.decoStart) then
+            player.decoStart = math.max(0, player.decoStart - gone)
+        end
+        n = n + gone
+    end
+    log("defense: cleared %d things and %d buildings around the radar", n, nb)
+    return n, nb
+end
+
 -- ---------------------------------------------------------------- setup
 -- After the game's preMNB2Admin: squad in a ring around the radar in the middle,
--- camera there, radar placed, Germans already on the map sorted by side.
-function defense.afterSetup()
+-- camera there, the ground around it cleared, radar placed, Germans already on the
+-- map sorted by side.
+-- `fresh` = the game set up a new field (preMNB2Admin with ui_gameStarted == 0);
+-- otherwise it only loaded a battle under way (mnb2.lua:262), which keeps its layout.
+function defense.afterSetup(fresh)
+    if fresh == false then return defense.resume() end
     defense.on = false
     if not defense.wanted or type(player) ~= "table" or player.gameType ~= 1 then return end
     if not ALLOWED[tonumber(player.mnb2SubGame) or 0] then return end
@@ -106,6 +169,7 @@ function defense.afterSetup()
         t.x, t.y = cx + math.floor(math.cos(a) * 90), cy + math.floor(math.sin(a) * 90)
         t.targetx, t.targety = t.x, t.y
     end
+    defense.clearAround(cx, cy, defense.CLEAR_RADIUS)
     player.placeables = player.placeables or {}
     local p = player.placeables
     p[#p + 1] = { name = "coopRadar", x = cx, y = cy, size = 10, rotation = 0, losBlocker = 0, cover = 0, radius = 30, save = 0 }
@@ -114,7 +178,27 @@ function defense.afterSetup()
     for _, t in ipairs(player.deployedTroops or {}) do
         if isGerman(t) then t.coopSide = t.x < cx and "L" or "R" end
     end
+    defense.markAllSeen() -- what's on the map now stays put; later friendly arrivals come in at the radar
     log("defense: squad of %d around the radar at x %d", #squad, cx)
+end
+
+-- A Classic battle under way was loaded: it is a defense if its radar is there.
+-- Nothing is moved or cleared again.
+function defense.resume()
+    defense.on = false
+    if type(player) ~= "table" or player.gameType ~= 1 then return end
+    for _, p in ipairs(player.placeables or {}) do
+        if type(p) == "table" and p.name == "coopRadar" and type(p.x) == "number" then
+            defense.on = true
+            defense.radarX, defense.radarY = p.x, tonumber(p.y) or 360
+            break
+        end
+    end
+    if defense.on then
+        defense.aliasSprites()
+        defense.markAllSeen()
+        log("defense: battle under way resumed, radar at x %d", defense.radarX)
+    end
 end
 
 -- ---------------------------------------------------------------- waves
@@ -148,6 +232,11 @@ function defense.wrapMoveForward(orig)
     return function(dude, ...)
         if not isLeft(dude) then return orig(dude, ...) end
         if enemyCqc(dude) > 0 then return end
+        if type(fireInFront) == "function" and fireInFront(dude) > 0 then
+            -- a fire nearby: sidestep instead, as the game's own does
+            dude.targetx, dude.targety = dude.x, randNbr(720)
+            return
+        end
         dude.targetx = math.min(dude.x + randNbr(500) + 100, (tonumber(player.endLine) or 12600))
         dude.targety = dude.y + randNbr(100) - 50
         dude.patrolTimer = 7
@@ -189,11 +278,78 @@ function defense.wrapAdvance(orig)
         for _, t in ipairs(player.deployedTroops) do
             if t.faction == "axis" and (t.health or 0) > 10 and t.id ~= dude.id and (t.coopSide == "L") == left
                 and distanceCheck2(dude, t) < 400 then
-                local behind = left and (t.x < dude.x) or (t.x > dude.x)
+                local behind -- (not `left and a or b`: that falls through to b whenever a is false)
+                if left then behind = t.x < dude.x else behind = t.x > dude.x end
                 if behind and (underCover(t) == false or randNbr(100) < (t.momentum or 0) * 2) then
                     moveForward(t)
                 end
             end
+        end
+    end
+end
+
+-- ---------------------------------------------------------------- friendly arrivals
+-- The game brings reinforcements in at the far left (mnb2CallReinfButton, mnb2.lua:4972:
+-- x = 10, walking to the front) and bought vehicles at the left edge too. In the
+-- defense they come in like the horse cart does (germanSideCart, mnb2.lua:6761):
+-- from the top or bottom edge of the map, at the radar, alternating sides.
+defense.ARRIVAL_EDGE = 600 -- arrivals left of this were placed by the game at the left edge
+local seen = setmetatable({}, { __mode = "k" })
+defense.arrivalSide = 0
+
+function defense.markAllSeen()
+    for _, t in ipairs(player.deployedTroops or {}) do seen[t] = true end
+    for _, v in ipairs(player.deployedVehicles or {}) do seen[v] = true end
+end
+
+-- a new friendly soldier or vehicle at the left edge: in at the radar, from above or below
+function defense.bringIn(u, isVehicle)
+    defense.arrivalSide = defense.arrivalSide + 1
+    local fromTop = defense.arrivalSide % 2 == 1
+    local spread = isVehicle and 250 or 150
+    local x = defense.radarX + randNbr(spread * 2) - spread
+    u.x = x
+    u.y = fromTop and (isVehicle and -150 or -30) or (isVehicle and 870 or 750)
+    u.targetx = x
+    u.targety = defense.radarY + (fromTop and -1 or 1) * (100 + randNbr(80))
+end
+
+local function newArrivals()
+    for _, t in ipairs(player.deployedTroops or {}) do
+        if not seen[t] then
+            seen[t] = true
+            if t.faction == "allied" and type(t.x) == "number" and t.x < defense.ARRIVAL_EDGE and (t.dead or 0) == 0 then
+                defense.bringIn(t, false)
+            end
+        end
+    end
+    for _, v in ipairs(player.deployedVehicles or {}) do
+        if not seen[v] then
+            seen[v] = true
+            if v.faction == "allied" and type(v.x) == "number" and v.x < defense.ARRIVAL_EDGE then
+                defense.bringIn(v, true)
+            end
+        end
+    end
+end
+
+-- Tactical withdrawal (the Command menu's TacDraw, a player skill): the game walks the
+-- soldier to x -500 and takes him off at x < 100 (ai.lua:1690, urb_engine.lua:6822,
+-- with a chance of a TP refund in Classic). From the middle that's half the map, so in
+-- the defense he leaves by the nearest top/bottom edge (called from the patched line).
+-- The game keeps targets inside y 10..710 (sanityCheck), hence the 40 px margins.
+function defense.withdraw(t)
+    if not defense.active() or type(t) ~= "table" or type(t.y) ~= "number" then return end
+    t.targetx = t.x
+    t.targety = t.y < defense.radarY and 0 or 720
+end
+
+-- at the edge: handed to the game's own take-off (x < 100, urb_engine.lua:6822)
+local function withdrawn()
+    for _, t in ipairs(player.deployedTroops or {}) do
+        if t.faction == "allied" and (tonumber(t.tacDraw) or 0) > 0 and (t.dead or 0) == 0 and type(t.y) == "number"
+            and (t.y <= 40 or t.y >= 680) then
+            t.x = 50
         end
     end
 end
@@ -204,6 +360,8 @@ end
 function defense.update()
     defense.aliasSprites()
     if not defense.active() then return end
+    newArrivals()
+    withdrawn()
     local rx, ry, r2 = defense.radarX, defense.radarY, defense.RADIUS * defense.RADIUS
     for _, t in ipairs(player.deployedTroops or {}) do
         if isGerman(t) then

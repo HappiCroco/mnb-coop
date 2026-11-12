@@ -1,7 +1,7 @@
 {
   "id": "mnb_coop",
   "name": "Mud and Blood Co-op",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Co-op for up to 3 players: Multiplayer lobby, co-op campaign with your own roster of 6 (bring your best, the rest train at home), the host's battle live on every screen, and your own soldiers to command.",
   "enabled": true,
   "authors": [

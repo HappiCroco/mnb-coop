@@ -16,7 +16,7 @@ local net = require("includes/mods/mnb_coop/coop_net")
 
 local squad = {}
 
-local MAX_ORDER_IDS = 12
+local MAX_ORDER_IDS = 40 -- a Classic army can be big
 local replaying = false -- the host is running a friend's click through the game's code right now
 
 local function log(fmt, ...)
@@ -319,9 +319,11 @@ end
 -- was on screen but the found loot and crates, then the game's own left-click
 -- release at that point (with the mouse there too: the loot buttons and the
 -- crate handlers read love.mouse, Button.new urb_engine.lua:134-137, 7595).
+-- (the panel globals too: the game's move closes the open promotion/skill panel,
+-- main.lua:6850-6852, and that must not close the host's own)
 local SAVED_GLOBALS = { "buttons", "mousePrompt", "mousePrompter", "mousePromptLock", "iconOn", "altMove",
     "selectionX", "selectionY", "selecting", "mouseOverIconId", "mouseDropIconId", "dragingIcon", "buttoned",
-    "justClicked" }
+    "justClicked", "specID", "specDisplay", "skillDisplay", "abilityDisplay" }
 
 -- the game's loot and crate buttons (urb_engine.lua:44743-44757), world space
 local function lootButtons()
@@ -515,6 +517,13 @@ local HUD_LOCAL = { mnb2Reinf = true, mnb2Command = true, mnb2Radio = true, mnb2
     mnb2Item = true, mnb2Vehicles = true, mnb2Upgrades = true, mnb2Back = true, directiveMenu = true }
 squad.HUD_LOCAL = HUD_LOCAL
 
+-- buttons that end the battle or order the WHOLE team around: the host's call only.
+-- mnb2Retreat ends the battle (ui_squadLostFade, mnb2.lua:2163), trenchRetreatz sets
+-- mnb2Miss = 10 (trench.lua:581), trenchUp/trenchRetreat move every allied soldier
+-- (trench.lua:560, 603) with no owner check.
+local HUD_HOST_ONLY = { mnb2Retreat = true, trenchRetreatz = true, trenchUp = true, trenchRetreat = true }
+squad.HUD_HOST_ONLY = HUD_HOST_ONLY
+
 function squad.isHudLabel(label)
     if type(label) ~= "string" then return false end
     return label:match("^mnb2") ~= nil or label:match("^trench") ~= nil or label:match("^playerSkill_%d+$") ~= nil
@@ -525,6 +534,7 @@ end
 -- a HUD button a friend may have the host run
 function squad.hudLabelOk(label)
     if type(label) ~= "string" or #label > 40 or not label:match("^[%w_]+$") or HUD_LOCAL[label] then return false end
+    if HUD_HOST_ONLY[label] then return false end
     if not squad.isHudLabel(label) then return false end
     for _, prefix in ipairs({ "playerSkill_", "trenchAbility_", "directiveOffer_", "myDirectives_" }) do
         if label:sub(1, #prefix) == prefix then return label:sub(#prefix + 1):match("^%d+$") ~= nil end
@@ -850,6 +860,13 @@ function squad.clientHudClick(x, y)
             if battle then battle.localSound = true end
             if type(fn) == "function" then pcall(fn) end
             if battle then battle.localSound = false end
+        elseif HUD_HOST_ONLY[b.label] then
+            -- ends the battle or orders everyone: the host's call
+            local battle = mnbCoop and mnbCoop.battle
+            if battle then battle.localSound = true end
+            pcall(function() poop:clone():play() end)
+            pcall(anounceStuff, "Only the host can order that")
+            if battle then battle.localSound = false end
         else
             net.sendToHost({ t = "hud", label = b.label, x = x, y = y, cx = player.screenx or 0, cy = player.screeny or 0,
                 ids = selectedIds(), menu = tonumber(mnb2MenuDisplay) or 0 })
@@ -1157,6 +1174,5 @@ function squad.drawClientBox()
     love.graphics.pop()
 end
 
-net.onClientMessage = function(seat, msg) return squad.onClientMessage(seat, msg) end
 
 return squad
