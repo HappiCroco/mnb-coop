@@ -26,6 +26,7 @@ local net = require("includes/mods/mnb_coop/coop_net")
 local defense = {}
 
 defense.RADIUS = 130     -- how close to the radar counts as reaching it (radar itself: 30)
+defense.SPAWN_CLEAR = 900 -- no German appears closer than this to the radar (waves, drops, carts, the map's)
 defense.LEFT_EDGE = 400  -- left Germans stay right of this (the game's own miss line is 300)
 defense.armed = false    -- the co-op Classic tile was just clicked
 defense.wanted = false   -- this Classic session came from the co-op tile
@@ -78,10 +79,25 @@ local function alliedSpan()
     return lo or defense.radarX, hi or defense.radarX
 end
 
-local function sendLeft(t, x)
-    t.coopSide = "L"
+function defense.placeAt(t, x)
     t.x, t.targetx = x, x
     if type(t.trenchHome) == "number" then t.trenchHome = x end
+end
+
+local function sendLeft(t, x)
+    t.coopSide = "L"
+    defense.placeAt(t, x)
+end
+
+-- Spawn clearance (owner, 2026-11-11: "Germans spawning on the radar"): the game aims
+-- waves, drops and carts at the front line, which in the defense is right by the radar.
+-- A point inside radar ± SPAWN_CLEAR moves out to the zone's edge on its own side.
+function defense.outsideClear(x, side)
+    local rx, c = defense.radarX, defense.SPAWN_CLEAR
+    if math.abs(x - rx) >= c then return x end
+    if side == nil then side = x < rx and "L" or "R" end
+    if side == "L" then return rx - c - randNbr(150) end
+    return rx + c + randNbr(150)
 end
 
 -- ---------------------------------------------------------------- the clearing
@@ -197,6 +213,10 @@ function defense.resume()
     if defense.on then
         defense.aliasSprites()
         defense.markAllSeen()
+        -- Germans already fighting keep their place (the clearance is for new ones only)
+        for _, t in ipairs(player.deployedTroops or {}) do
+            if isGerman(t) and t.coopSide == nil then t.coopSide = t.x < defense.radarX and "L" or "R" end
+        end
         log("defense: battle under way resumed, radar at x %d", defense.radarX)
     end
 end
@@ -232,10 +252,16 @@ function defense.wrapWave(orig)
         local n1 = #troops
         local lo, hi = alliedSpan()
         local twins = net.playerCount() > 1
+        -- the game puts a wave 750+ past the frontmost friendly soldier, who may be at or
+        -- even left of the radar: keep both sides' spawns out of the radar's clear zone
+        local eastMin = defense.radarX + defense.SPAWN_CLEAR
+        local westMax = defense.radarX - defense.SPAWN_CLEAR
         for i = n0 + 1, n1 do
             local t = troops[i]
             if isGerman(t) and t.coopSide == nil then
-                local leftX = math.max(defense.LEFT_EDGE + 200, math.floor(lo - (t.x - hi)))
+                if t.x < eastMin then defense.placeAt(t, eastMin + randNbr(200)) end
+                local leftX = math.min(westMax - randNbr(200),
+                    math.max(defense.LEFT_EDGE + 200, math.floor(lo - (t.x - hi))))
                 if twins then
                     t.coopSide = "R"
                     local twin = copySoldier(t, 1)
@@ -276,12 +302,15 @@ end
 function defense.wrapFjDrop(orig)
     return function(x, y, ...)
         if not defense.active() or type(x) ~= "number" then return orig(x, y, ...) end
+        -- the drop spreads men ±500 around x (axisFJDrop): aim it that far past the clear zone
+        local rx, edge = defense.radarX, defense.SPAWN_CLEAR + 500
+        local east = math.max(x, rx + edge)
+        local west = math.min(mirrorX(x), rx - edge)
         if net.playerCount() > 1 then
-            orig(x, y, ...)
-            return orig(mirrorX(x), y, ...)
+            orig(east, y, ...)
+            return orig(west, y, ...)
         end
-        if nextGoesLeft() then x = mirrorX(x) end
-        return orig(x, y, ...)
+        return orig(nextGoesLeft() and west or east, y, ...)
     end
 end
 
@@ -438,7 +467,13 @@ function defense.update()
     local rx, ry, r2 = defense.radarX, defense.radarY, defense.RADIUS * defense.RADIUS
     for _, t in ipairs(player.deployedTroops or {}) do
         if isGerman(t) then
-            if t.coopSide == nil then t.coopSide = t.x < rx and "L" or "R" end
+            if t.coopSide == nil then
+                -- a German the game just put down: never inside the radar's clear zone
+                t.coopSide = t.x < rx and "L" or "R"
+                if (t.dead or 0) == 0 and math.abs(t.x - rx) < defense.SPAWN_CLEAR then
+                    defense.placeAt(t, defense.outsideClear(t.x, t.coopSide))
+                end
+            end
             if t.coopSide == "L" and t.x < defense.LEFT_EDGE - 70 then t.x = defense.LEFT_EDGE - 70 end
             if counts(t) and (t.dead or 0) == 0 and (t.health or 0) > 10 then
                 -- near the radar, or past its line to the other side (owner: either counts)

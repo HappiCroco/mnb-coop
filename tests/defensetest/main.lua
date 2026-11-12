@@ -90,10 +90,10 @@ local left, right = 0, 0
 for i = n0 + 1, #T do
   if T[i].coopSide == "L" then
     left = left + 1
-    check(T[i].x == lo - 750 and T[i].targetx == T[i].x and T[i].trenchHome == T[i].x, "left German mirrored: same distance from the west flank")
+    check(T[i].x <= 6300 - defense.SPAWN_CLEAR and T[i].targetx == T[i].x and T[i].trenchHome == T[i].x, "left German mirrored, outside the radar's clear zone (" .. T[i].x .. ")")
   elseif T[i].coopSide == "R" then
     right = right + 1
-    check(T[i].x == hi + 750, "right German where the game put him")
+    check(T[i].x >= 6300 + defense.SPAWN_CLEAR and T[i].targetx == T[i].x, "right German pushed out of the clear zone (game put him at " .. (hi + 750) .. ", now " .. T[i].x .. ")")
   end
 end
 check(left == 2 and right == 2, "solo: the wave split in two")
@@ -111,7 +111,13 @@ for i = n2 + 1, #T do
 end
 check(L2 == 4 and R2 == 4, "with friends: the full wave on each side (" .. L2 .. " left, " .. R2 .. " right)")
 local twin, orig = T[#T], T[n2 + 4] -- originals are n2+1..n2+4, their twins come after, in order
-check(twin.coopSide == "L" and twin.x == lo - 750 and twin.y == orig.y, "a twin mirrored to the left at the same height")
+check(twin.coopSide == "L" and twin.x <= 6300 - defense.SPAWN_CLEAR and twin.y == orig.y, "a twin mirrored to the left at the same height")
+-- a wave the game puts far out stays where it is (and its twin mirrors it)
+local farWave = defense.wrapWave(function() table.insert(player.deployedTroops, troop("axis", hi + 3000, 300)) end)
+local n3 = #T
+farWave()
+check(T[n3 + 1].x == hi + 3000 and T[n3 + 2].x == lo - 3000, "a far wave isn't moved; its twin mirrors it")
+for i = #T, n3 + 1, -1 do table.remove(T, i) end
 check(twin ~= orig and twin.weapon ~= orig.weapon or orig.weapon == nil, "the twin has his own tables")
 net.seats = {}
 -- the twins leave the test's list again
@@ -161,12 +167,16 @@ check(lo2 == 6210 and hi2 == 6390, "the two fronts: westmost and eastmost of our
 check(defense.mirrorX(hi2 + 1000) == lo2 - 1000, "1000 past the east front mirrors to 1000 past the west front")
 local drops = {}
 local fj = defense.wrapFjDrop(function(x, y) drops[#drops + 1] = x end)
-fj(hi2 + 1000, 360) fj(hi2 + 1000, 360)
-check(drops[1] == hi2 + 1000 and drops[2] == lo2 - 1000, "solo: paratroopers alternate fronts")
+local dropEdge = 6300 + defense.SPAWN_CLEAR + 500
+fj(hi2 + 3000, 360) fj(hi2 + 3000, 360)
+check(drops[1] == hi2 + 3000 and drops[2] == lo2 - 3000, "solo: paratroopers alternate fronts")
 net.seats = { { name = "Host" }, { name = "Ann" } }
 drops = {}
-fj(hi2 + 1000, 360)
-check(#drops == 2 and drops[1] == hi2 + 1000 and drops[2] == lo2 - 1000, "with friends: a drop on each front")
+fj(hi2 + 3000, 360)
+check(#drops == 2 and drops[1] == hi2 + 3000 and drops[2] == lo2 - 3000, "with friends: a drop on each front")
+drops = {}
+fj(hi2, 350) -- urb_engine.lua:42718 drops right on the front line
+check(drops[1] == dropEdge and drops[2] == 12600 - dropEdge, "a drop on the front line lands past the clear zone, both sides (" .. drops[1] .. ", " .. drops[2] .. ")")
 net.seats = {}
 function alliedFrontLine() return hi2 end
 local shells = {}
@@ -244,6 +254,20 @@ local fresh = troop("axis", 1500, 200) -- a paradrop, say: no side yet
 table.insert(T, fresh)
 defense.update()
 check(fresh.coopSide == "L", "a German who appears on the left is the left side's")
+local onRadar = troop("axis", 6300 + 100, 300) -- a German the game drops right by the radar
+local onRadarL = troop("axis", 6300 - 400, 300)
+table.insert(T, onRadar) table.insert(T, onRadarL)
+local misses = player.mnb2Miss
+defense.update()
+check(onRadar.coopSide == "R" and onRadar.x >= 6300 + defense.SPAWN_CLEAR and onRadar.targetx == onRadar.x,
+  "a new German by the radar is pushed out to the clear zone's edge (" .. onRadar.x .. ")")
+check(onRadarL.coopSide == "L" and onRadarL.x <= 6300 - defense.SPAWN_CLEAR, "on the left too (" .. onRadarL.x .. ")")
+check(player.mnb2Miss == misses, "and doesn't score for appearing there")
+local fighting = troop("axis", 6300 + 300, 300) -- saved mid-battle: already near the squad
+table.insert(T, fighting)
+defense.afterSetup(false)
+defense.update()
+check(fighting.x == 6600, "loading a battle under way: Germans already fighting keep their place")
 player.gameState = 1
 local before = player.mnb2Miss
 local late = troop("axis", 6300, 360) late.coopSide = "R"

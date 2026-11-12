@@ -283,6 +283,12 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   `mnb2Miss`, iron crosses on the HUD; 10 = game over, the game's own rule). He's sent back to his side (right:
   x 12000 like the game's misses; left: x 600). "L" Germans are kept right of x 330 so the game's own x<300 miss
   never fires for them. Jagers/zombies don't score (as in the game).
+- (v0.9.3) Spawn clearance (owner: "Germans spawning on the radar"): no new German within `SPAWN_CLEAR` (900 px)
+  of the radar. The game aims waves (front + 750), paradrops (front + 0/600/1000, spread ±500) and carts at the
+  front line, which here is next to the radar. Waves: right Germans pushed to radar + 900..1100, twins/left ones to
+  radar - 900 or further. fjDrop aimed at least radar ± 1400 (900 + the drop's 500 spread). Catch-all in
+  defense.update: any German appearing without a side inside the zone moves to its side's edge. Loading a battle
+  under way gives the Germans already there a side first, so they're not moved.
 - Ownership: the Classic dealing from v0.8.0 (start soldiers in turn, recruits = recruiter's, TP shared).
 - After the battle, Back on the end page → the Multiplayer screen.
 - (v0.9.1) The clearing: everything within 260 px of the radar is removed at setup (trees, rocks, placeables,
