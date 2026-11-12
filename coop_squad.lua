@@ -92,13 +92,16 @@ end
 -- In world space under each soldier, from the game's troop loop (qm.toml patch).
 function squad.drawOwnerRing(soldier)
     if not squad.active() or type(soldier) ~= "table" or soldier.dead ~= 0 then return end
-    if not isSquadSoldier(soldier) and not (soldier.coopOwner and soldier.playerControlled == 1) then return end
+    -- every soldier the players command, hired ones too (they have no coopOwner when the
+    -- host hired them or they arrived later: they're the host's, like ownerOf says)
     local seat = squad.ownerOf(soldier)
+    if not seat then return end
     local r, g, b = squad.seatColor(seat)
     love.graphics.push("all")
-    love.graphics.setLineWidth(1.5)
-    love.graphics.setColor(r, g, b, seat == squad.mySeat() and 0.45 or 0.28) -- faint: a hint, not a highlight
-    love.graphics.circle("line", soldier.x, soldier.y, 17)
+    love.graphics.setLineStyle("smooth")
+    love.graphics.setLineWidth(1) -- thin but bright (owner, 2026-11-11: the old one was too faded)
+    love.graphics.setColor(r, g, b, seat == squad.mySeat() and 1 or 0.85)
+    love.graphics.circle("line", soldier.x, soldier.y, 17, 32)
     love.graphics.pop()
 end
 
