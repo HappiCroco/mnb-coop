@@ -488,6 +488,37 @@ squad.onClientMessage(2, { t = "cancel" })
 squad.hostRunOrders()
 table.remove(player.deployedTroops) -- the recruit leaves the test
 
+-- a bought gun: the Gear button arms "Select a soldier" with no soldier behind it
+-- (mnb2.lua:1868), then her click on a soldier fires it through his troop button
+function mnb2GearscopedGarandButton() mousePrompt, mousePromptLock, mnb2MenuDisplay = 57, 1, 0 end
+local armedGun, gunFor
+-- (the stub Button calls label.."Button"; the game's troopClick fires for the first soldier
+-- under the click and clears the prompt, so a neighbour 10 px away gets nothing)
+for id = 1, 7 do
+  _G["troop_" .. id .. "Button"] = function()
+    if mousePrompt == 57 and not gunFor then armedGun, gunFor = mousePrompt, id mousePrompt = 0 end
+  end
+end
+check(squad.hudLabelOk("mnb2GearscopedGarand"), "Gear buttons allowed")
+toSeat, mousePrompter = {}, 0
+squad.onClientMessage(2, { t = "hud", label = "mnb2GearscopedGarand", x = 560, y = 690, cx = 1000, cy = 0, ids = {}, menu = 5 })
+squad.hostRunOrders()
+pm = nil
+for _, m in ipairs(toSeat) do if m.msg.t == "prompt" then pm = m.msg end end
+check(pm and pm.p == 57, "the gun's prompt stays armed for her (no soldier behind it)")
+local gameRelease0 = function(x, y, b)
+  for _, bt in ipairs(buttons) do if bt.click then bt.click(bt.label) end end
+end
+squad.setGameRelease(gameRelease0)
+local target = player.deployedTroops[convertedId(4)]
+squad.onClientMessage(2, { t = "move", ids = {}, x = target.x, y = target.y })
+squad.hostRunOrders()
+check(armedGun == 57 and (gunFor == 3 or gunFor == 4), "her click on a soldier hands him the gun (troop button)")
+squad.setGameRelease(fakeRelease)
+-- tips on the map: a friend may click one away
+function tipCuezButton() end
+check(squad.hudLabelOk("tipCuez") and squad.isHudLabel("tipCuez"), "a tip click is allowed (tipCuezButton)")
+
 -- ---- face swap (host)
 local a3, a4 = T[3], T[4]
 squad.onClientMessage(2, { t = "swap", a = 3, b = 4 })

@@ -303,6 +303,9 @@ end
 local function armedPrompt(seat)
     local p = seatPrompt[seat]
     if not p then return nil end
+    -- armed by a HUD button, not by a soldier (the Gear menu's guns, mnb2.lua:1868: "Select a
+    -- soldier", mousePrompt 44-59/76/99/106 with no mousePrompter): nobody to check
+    if (tonumber(p.who) or 0) == 0 then return p end
     local i = indexOfId(p.who)
     local t = i and player.deployedTroops[i]
     if not t or squad.ownerOf(t) ~= seat or t.dead ~= 0 then
@@ -391,6 +394,18 @@ local function runMove(o)
     local g = {}
     for _, name in ipairs(SAVED_GLOBALS) do g[name] = _G[name] end
     buttons, mousePromptLock, iconOn = lootButtons(), 0, 0
+    if armed and o.button == 1 and type(Button) == "table" and type(Button.new) == "function" then
+        -- prompts aimed at a soldier (a bought gun, first aid, a medic bag...) fire from the
+        -- game's troop buttons (troopClick, urb_engine.lua:2689): the same ones it makes,
+        -- 25 px around each allied soldier (urb_engine.lua:44413). troopClick only acts while
+        -- nothing else took the click this frame (buttoned == 0, urb_engine.lua:2692).
+        buttoned = 0
+        for _, t in ipairs(troops) do
+            if t.faction == "allied" and t.dead == 0 and (tonumber(t.deadTimer) or 0) < 10 and type(t.x) == "number" then
+                buttons[#buttons + 1] = Button.new(t.x - 12, t.y - 12, 25, 25, "troop_" .. t.id, "active", true, "")
+            end
+        end
+    end
     mousePrompt, mousePrompter = armed and armed.p or 0, armed and armed.who or 0
     altMove = o.alt and 1 or 0 -- Alt held: a waypoint, sent on the friend's Alt release
     mouseOverIconId, mouseDropIconId, dragingIcon = 0, 0, 0
@@ -531,7 +546,7 @@ function squad.isHudLabel(label)
     if type(label) ~= "string" then return false end
     return label:match("^mnb2") ~= nil or label:match("^trench") ~= nil or label:match("^playerSkill_%d+$") ~= nil
         or label:match("^directive") ~= nil or label:match("^myDirectives_%d+$") ~= nil
-        or label == "broomer" or label == "noSkillTrench"
+        or label == "broomer" or label == "noSkillTrench" or label == "tipCuez"
 end
 
 -- a HUD button a friend may have the host run
@@ -837,7 +852,14 @@ function squad.clientHud()
         return
     end
     for _, b in ipairs(type(buttons) == "table" and buttons or {}) do
-        if type(b) == "table" and squad.isHudLabel(b.label) then squad.hudButtons[#squad.hudButtons + 1] = b end
+        if type(b) == "table" and type(b.label) == "string" and b.label:sub(1, 7) == "tipCuez" then
+            -- a tip on the map ("tipCuez" .. its text, urb_engine.lua:44386): click it to fade it.
+            -- The host fades the tip nearest the click (tipCuezButton), so the label alone is enough.
+            squad.hudButtons[#squad.hudButtons + 1] = { X = b.X, Y = b.Y, width = b.width, height = b.height,
+                label = "tipCuez", mouseOverText = "" }
+        elseif type(b) == "table" and squad.isHudLabel(b.label) then
+            squad.hudButtons[#squad.hudButtons + 1] = b
+        end
     end
 end
 

@@ -249,6 +249,12 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   Anything that arms `mousePrompt` for a friend (aimed skills, medic bag, toolbox, intel) is kept per seat on the host
   (`seatPrompt`), never left in the globals; the friend gets `prompt {p, who}` (their mirror draws the aiming cursor)
   and their next left click fires it through the replay. Backspace → `cancel`.
+- (v0.9.5) Prompts aimed at a soldier (Gear menu guns 44-59/76/99/106, first aid, medic bag...) fire in the game's
+  troopClick, from its `troop_<id>` buttons. The replay now adds those buttons (25 px, every standing allied soldier,
+  as urb_engine.lua:44413) when a prompt is armed. Gear buttons arm the prompt with no mousePrompter, so a seat
+  prompt with `who == 0` is kept as is (before, `armedPrompt` threw it away at once: friends could buy soldiers but
+  not guns). Map tips (`tipCuez<text>` buttons) are harvested on the friend's window as `tipCuez`; the host runs
+  tipCuezButton at their point, fading the tip nearest it.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.
