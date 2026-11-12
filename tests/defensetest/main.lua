@@ -407,6 +407,28 @@ table.insert(V, stray)
 defense.update()
 check(stray.coopSide == "L", "a vehicle with no side gets one by where it is")
 for i = #V, nv + 1, -1 do table.remove(V, i) end
+
+-- our soldiers falling back go to the radar, not left (owner: "they should retreat to the radio")
+local function nearRadar(t) return math.sqrt((t.targetx - 6300) ^ 2 + (t.targety - 360) ^ 2) <= defense.FALLBACK_R + 25 end
+local retreat = defense.wrapAlliedRetreat(function(d) d.targetx = d.x - 400 d.state = "idle" d.retreating = 10 end)
+local eastGuy = troop("allied", 6800, 300, 1)
+retreat(eastGuy)
+check(nearRadar(eastGuy) and eastGuy.targetx > 6300 and eastGuy.retreating == 10,
+  "a shaken soldier east of the radar falls back to it, on his side (" .. eastGuy.targetx .. ", " .. eastGuy.targety .. ")")
+local westGuy = troop("allied", 5600, 420, 1)
+retreat(westGuy)
+check(nearRadar(westGuy) and westGuy.targetx < 6300, "west of it: to the radar too, not further west (" .. westGuy.targetx .. ")")
+local cqc = troop("allied", 6800, 300, 1)
+defense.wrapAlliedRetreat(function() end)(cqc) -- the game didn't move him (a German at arm's length)
+check(cqc.targetx == 6800, "when the game doesn't move him, neither do we")
+local panicky = troop("allied", 7000, 500, 1)
+panicky.targetx = 7000 - 1280
+defense.panicked(panicky)
+check(nearRadar(panicky), "a panicking soldier runs to the radar instead of a screen to the left")
+local leaving = troop("allied", 7000, 500, 1)
+leaving.tacDraw, leaving.targetx = 2, -500
+defense.panicked(leaving)
+check(leaving.targetx == -500, "a tactical withdrawal still leaves")
 player.gameState = 1
 local before = player.mnb2Miss
 local late = troop("axis", 6300, 360) late.coopSide = "R"

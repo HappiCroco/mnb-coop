@@ -40,6 +40,7 @@ moveForward = defense.wrapMoveForward(moveForward)
 axisRetreat = defense.wrapRetreat(axisRetreat)
 axisInFront = defense.wrapInFront(axisInFront)
 axisAdvance = defense.wrapAdvance(axisAdvance)
+alliedRetreat = defense.wrapAlliedRetreat(alliedRetreat) -- our shaken soldiers fall back to the radar, not left
 -- German vehicles from both sides: each side's own German front, a left one's AI mirrored
 -- (the vehicle AIs vehicleUpdate calls one vehicle at a time, ai.lua:4150-4182)
 for _, name in ipairs({ "tankAI", "truckAI", "benzAI", "pumaAI", "bikeAI", "sdkfz2AI", "horseCartAI",

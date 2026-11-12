@@ -300,6 +300,11 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   code or `"coop": "host"|"any"` → FINE; unmarked code only on the host or code version differs → CHECK; a `"both"`
   mod missing or in another version → SERIOUS. Pop-up at join when CHECK or worse, "!" on the card, the list in the
   card's tooltip (host: each friend; friend: the host's card). README explains it for players. Test: modtest.
+- (v0.9.9) Co-op Classic rules (12-soldier size control, double TP) apply to every co-op defense battle, solo too
+  (`coopClassicRules`: defense.on, or Classic with friends); they were friend-only. Wave doubling stays friend-only.
+- (v0.9.9) Falling back in the defense goes to the radar (owner: "they should retreat to the radio"): alliedRetreat
+  (x − 100..600) is wrapped and the panic run (ai.lua:5723, x − 1280) patched to call `defense.panicked`; both pick a
+  spot ~75 px from the radar on the soldier's own side. Tactical withdrawals still leave.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.
