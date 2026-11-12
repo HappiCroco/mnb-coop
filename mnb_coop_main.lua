@@ -300,24 +300,30 @@ function buttonEngine(...)
     return result
 end
 
+-- Co-op Classic rules (12-soldier size control, double TP): every co-op defense battle,
+-- solo too (owner, 2026-11-12: "the 6-man rule becomes 12 even if I'm solo"), and any
+-- Classic battle the host plays with friends connected.
+local function coopClassicRules()
+    if type(player) ~= "table" or player.gameType ~= 1 then return false end
+    return defense.on or (net.role == "host" and net.playerCount() > 1)
+end
+mnbCoop.coopClassicRules = coopClassicRules
+
 -- Classic's big-squad punishment (size control, urb_engine.lua:6022) starts above this
--- many soldiers (qm.toml patch). The game's 6 is one player's; a co-op Classic battle
--- with friends allows 12 for the whole team (owner, 2026-11-11). Campaign: its squad size.
+-- many soldiers (qm.toml patch). The game's 6 is one player's; co-op Classic allows 12
+-- for the whole team (owner, 2026-11-11). Campaign: its squad size.
 function coopSizeLimit()
-    if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameType == 1 then
-        return 12
-    end
+    if coopClassicRules() then return 12 end
     return coopSquadMax and coopSquadMax() or 6
 end
 
--- TP income in co-op Classic with friends: double (owner, 2026-11-11). The pool and its
+-- TP income in co-op Classic (solo defense too): double (owner, 2026-11-11). The pool and its
 -- cap (20 + ribbons, giveTp at mnb2.lua:894) stay shared, so it fills faster but doesn't
 -- grow. giveTp is the game's one income path (kills, waves, loot, special waves); only
 -- the sitrep bonus (ai.lua:6157) adds TP without it.
 local coopGiveTp = giveTp
 function giveTp(nbr, ...)
-    if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameType == 1
-        and type(nbr) == "number" then
+    if type(nbr) == "number" and coopClassicRules() then
         nbr = nbr * 2
     end
     return coopGiveTp(nbr, ...)

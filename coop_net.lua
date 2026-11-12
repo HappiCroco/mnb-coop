@@ -26,7 +26,7 @@ local function noteMods(diffs, who)
     end
 end
 
-net.VERSION = "0.9.8" -- co-op protocol; must match on both sides
+net.VERSION = "0.9.9" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
 -- enet peer timeout (ms): give up on a peer after `min` once its unanswered packets have
 -- been resent the limit, and after `max` in any case. Was 3000/8000 (a crashed game noticed
