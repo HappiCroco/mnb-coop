@@ -353,6 +353,13 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   > 0.5 s steps down 60/45/30/20/10 (2 s apart); < 0.15 s for 10 s steps up one, never above the chosen `syncRate`.
   One shared stream, so it follows the slowest teammate. Ctrl+F8 shows the rate and who is furthest behind. The
   catch-up PAUSE (wait for a teammate > 2 s behind) is not built. Test: battletest.
+- (v1.1.2) Leaving a battle: the host's pause menu gets a fifth entry, BACK TO LOBBY (y 660 under the game's four,
+  registered after buttonEngine, drawn after the game's draw; only with teammates in the battle). It runs the game's
+  own pause_optionButton (saves the battle to carry on later) and lands on the lobby page; Options itself stays closed
+  with teammates. A teammate's Esc (or F10) opens our menu over the battle: back / leave the battle (stay in the
+  lobby) / leave the session (it replaced "Esc twice").
+- (v1.1.2) Gliding fix: a snap that changes other fields of a moving element no longer finishes its glide at once
+  (it jumped to the end of its move: the jitter); untouched gliding fields restart from where they are.
 - (v0.9.11) Co-op ribbons (`coop_ribbons.lua`, ids from 201): a registry that defines `_G["rib<id>"]` (png from the mod's
   `sprites/` via io.open; a flat fallback if missing), `ribName_<id>`, `ribDesc_<id>`, so the game's ribbon screen
   (draws every owned ribbon in player.ribs order, 72 slots), tooltip, hasRib and announceRibbon just work. Only awarded in
