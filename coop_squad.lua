@@ -532,7 +532,10 @@ end
 
 -- buttons that only change what the clicking player's own HUD shows
 local HUD_LOCAL = { mnb2Reinf = true, mnb2Command = true, mnb2Radio = true, mnb2Build = true, mnb2Gear = true,
-    mnb2Item = true, mnb2Vehicles = true, mnb2Upgrades = true, mnb2Back = true, directiveMenu = true }
+    mnb2Item = true, mnb2Vehicles = true, mnb2Upgrades = true, mnb2Back = true, directiveMenu = true,
+    -- map tips: each window has its own copies (a spawned effect list, coop_battle SPAWN), so
+    -- a friend's click fades their own (tipCuezButton on the mirror), not the host's
+    tipCuez = true }
 squad.HUD_LOCAL = HUD_LOCAL
 
 -- buttons that end the battle or order the WHOLE team around: the host's call only.
@@ -853,8 +856,8 @@ function squad.clientHud()
     end
     for _, b in ipairs(type(buttons) == "table" and buttons or {}) do
         if type(b) == "table" and type(b.label) == "string" and b.label:sub(1, 7) == "tipCuez" then
-            -- a tip on the map ("tipCuez" .. its text, urb_engine.lua:44386): click it to fade it.
-            -- The host fades the tip nearest the click (tipCuezButton), so the label alone is enough.
+            -- a tip on the map ("tipCuez" .. its number, urb_engine.lua:44386): click it to fade
+            -- it. tipCuezButton fades the tip nearest the click, so the label alone is enough.
             squad.hudButtons[#squad.hudButtons + 1] = { X = b.X, Y = b.Y, width = b.width, height = b.height,
                 label = "tipCuez", mouseOverText = "" }
         elseif type(b) == "table" and squad.isHudLabel(b.label) then
@@ -958,7 +961,7 @@ function squad.clientHover()
     -- 0b. HUD buttons: the game's tooltip (Classic menu buttons show theirs through
     -- mnb2MouseOver, which the game's HUD pass has just set)
     local hud = squad.hudHits(mx, my)[1]
-    if hud then
+    if hud and hud.label ~= "tipCuez" then -- (a tip's text comes from step 1)
         if not tostring(hud.label):match("^mnb2") then mouseOverText = hud.mouseOverText or "" end
         return
     end
