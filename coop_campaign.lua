@@ -347,7 +347,15 @@ function classic.update()
     if mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing then return end
     local lobby = mnbCoop and mnbCoop.lobby
     local lobbyPage = lobby and lobby.getPage and lobby.getPage()
-    if menuPage == 1 or (lobbyPage and menuPage == lobbyPage) then classic.exit() end
+    if menuPage == 1 or (lobbyPage and menuPage == lobbyPage) then
+        classic.exit()
+        -- co-op Classic was opened from the Multiplayer lobby: the game's Back (to its main
+        -- menu) goes back there instead (owner, 2026-11-12)
+        if menuPage == 1 and lobbyPage then
+            menuPage = lobbyPage
+            mouseOverText = ""
+        end
+    end
 end
 
 -- =============================================================================

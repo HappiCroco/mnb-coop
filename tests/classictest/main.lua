@@ -102,6 +102,7 @@ player.gameState = 1
 menuPage = 1 -- the game's Back from the mode select
 classic.update()
 check(not classic.active and player.name == "real", "main menu: real profile back")
+check(menuPage == 140, "the game's Back from co-op Classic lands on the Multiplayer lobby, not the main menu")
 check(fs.read("saveMNB2.lua") == real2, "real Classic save untouched")
 
 -- Back from the Multiplayer lobby / opening the co-op campaign while it is open
