@@ -767,11 +767,18 @@ function battle.hostUpdate(dt)
     if not H then return end
     hostScanSpawns()
     H.acc = H.acc + dt
-    local rate = tonumber(net.option("syncRate", 20)) or 20
+    local rate = tonumber(net.option("syncRate", 30)) or 30 -- (config.lua; at most one per frame)
     local interval = 1 / math.max(1, math.min(60, rate))
     if H.acc >= interval then
         H.acc = math.min(H.acc - interval, interval)
+        local t0 = love.timer.getTime()
         hostTick()
+        local now = love.timer.getTime()
+        -- for the stats panel: the cost of one update (smoothed) and updates per second
+        local s = battle.stats
+        s.tickMs = (s.tickMs or 0) * 0.9 + (now - t0) * 1000 * 0.1
+        if s.lastTickAt then s.rate = (s.rate or 0) * 0.9 + (1 / math.max(0.001, now - s.lastTickAt)) * 0.1 end
+        s.lastTickAt = now
         -- out now: enet would otherwise send it at the next frame's service call, one
         -- frame later (the update is made after this frame's service, in hostUpdate)
         net.flush()
