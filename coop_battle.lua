@@ -959,6 +959,7 @@ local function startView(msg)
         player.screenx, player.masterScreenx, player.screeny, player.masterScreeny = x, x, y, y
     end
     battle.viewing = true
+    C.hostLeft = nil -- (a new battle while a kept report was still open)
     battle.leaveAskedAt = nil
     buttons = {}
     mouseOverText = ""
@@ -1015,7 +1016,14 @@ function battle.onHostMessage(msg)
         C.interval = math.max(0.03, math.min(0.25, C.interval * 0.8 + gap * 0.2))
         applySnap(msg)
     elseif msg.t == "bend" then
-        battle.stopView("the host's battle ended")
+        if battle.inDebrief() then
+            -- the host left the mission report: this teammate keeps their own copy, as it
+            -- stands, until they press Back themselves (owner, 2026-11-12)
+            C.hostLeft = true
+            C.hostPaused = false
+        else
+            battle.stopView("the host's battle ended")
+        end
     end
 end
 
@@ -1255,7 +1263,8 @@ function battle.drawOverlay()
     local sub = "Esc twice to leave"
     if battle.inDebrief() then
         text = C.hostName:upper() .. "'S MISSION REPORT"
-        sub = "Back: return to the lobby whenever you like"
+        sub = C.hostLeft and "The host has left the report. Back: return to the lobby"
+            or "Back: return to the lobby whenever you like"
     end
     if battle.leaveAskedAt and love.timer.getTime() - battle.leaveAskedAt < 3 then
         sub = "Press Esc again to leave the co-op session"

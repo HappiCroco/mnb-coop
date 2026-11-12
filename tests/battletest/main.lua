@@ -292,6 +292,11 @@ check(box3Timer == 2.5 and tempMVPName == "Pvt. Test", "debrief timers arrive")
 check(type(love) == "table", "a forged global name is refused")
 hostP.gameState = 0
 
+-- the host leaves the report first: the teammate keeps theirs open until their own Back
+send({ t = "bend" })
+check(battle.viewing and battle.inDebrief() and menuPage == 4 and box3Timer == 2.5 and T.getClient().hostLeft == true,
+    "host left the report: the teammate's copy stays open as it was")
+
 -- the teammate leaves the report on their own (Back), before the host does
 battle.leaveReport()
 check(not battle.viewing and player == clientReal, "teammate left the mission report: back in their own game, no waiting")
