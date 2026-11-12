@@ -348,5 +348,47 @@ else
   print("no audio in this LOVE build, sound test skipped")
 end
 
+-- the automatic rate: a teammate falling behind brings the host's updates down, and back up once current
+do
+  local savedSeats, savedOption = net.seats, net.option
+  net.option = function(id, d) if id == "syncRate" then return 30 end return d end
+  net.seats = { { name = "Host" }, { name = "Ann", ping = 100 } }
+  local now = 1000
+  local h = { seq = 10, sentAt = {}, lag = {} }
+  h.sentAt[5] = { n = 5, t = now - 1.2 } -- update 5 left 1.2 s ago
+  T.setHost(h)
+  local realTime = love.timer.getTime
+  love.timer.getTime = function() return now end
+  check(battle.onClientMessage(2, { t = "lag", n = 5 }) and math.abs(h.lag[2].v - 1.1) < 0.01, "Ann is 1.1 s behind (ping taken off)")
+  check(battle.onClientMessage(2, { t = "lag", n = 99 }) and h.lag[2].v < 1.2, "a report of an update not sent yet is ignored")
+  check(not battle.onClientMessage(2, { t = "other" }), "other messages aren't the battle's")
+  T.updateRate(now)
+  check(battle.currentRate() == 20, "behind: 30 -> 20 updates per second")
+  T.updateRate(now + 1)
+  check(battle.currentRate() == 20, "one step at a time (2 s apart)")
+  T.updateRate(now + 2.1)
+  check(battle.currentRate() == 10, "still behind: 20 -> 10")
+  T.updateRate(now + 4.2)
+  check(battle.currentRate() == 10, "never below 10")
+  h.lag[2] = { v = 0.05, at = now + 5 }
+  T.updateRate(now + 5)
+  T.updateRate(now + 7.5)
+  check(battle.currentRate() == 10, "caught up: waits a while before climbing")
+  h.lag[2].at = now + 15.1
+  T.updateRate(now + 15.1)
+  check(battle.currentRate() == 20, "current for 10 s: 10 -> 20")
+  h.lag[2].at = now + 25.2
+  T.updateRate(now + 25.2)
+  h.lag[2].at = now + 35.3
+  T.updateRate(now + 35.3)
+  check(battle.currentRate() == 30, "back to the chosen 30, and no higher")
+  net.option = function(id, d) if id == "syncRate" then return 30 end if id == "autoRate" then return false end return d end
+  h.rate = 10
+  check(battle.currentRate() == 30, "automatic rate off: always the chosen rate")
+  love.timer.getTime = realTime
+  T.setHost(nil)
+  net.seats, net.option = savedSeats, savedOption
+end
+
 print(("%d passed, %d failed"):format(passes, fails))
 love.event.quit(fails == 0 and 0 or 1)

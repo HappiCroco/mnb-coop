@@ -344,6 +344,15 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   START (all ready) goes back to the page the start came from and replays it; Cancel goes back and resets READY.
   Known: the para button spends its credit before preMNB2Admin, so cancelling the room after it costs that credit.
   Tests: cooptest (stage sync), hubtest (gate, start, cancel, a teammate pulled in and out).
+- (v1.1) Kept mission report (owner, 2026-11-12: "teammates keep their own open"): a "bend" that arrives while a
+  teammate is on the mission-end page no longer stops the view; `C.hostLeft` freezes it as it stands (banner says the
+  host has left) until their own Back (`leaveReport`). A new battle's "bfull" replaces it as before.
+- (v1.1) AUTOMATIC RATE (option `autoRate`, on): teammates send `{t="lag", n=<last applied update>}` every 0.25 s
+  (battle.clientUpdate); the host keeps each update's send time (`H.sentAt`, 512) and takes
+  backlog = now - sentAt[n] - ping, smoothed per seat (`H.lag`). `updateRate` (every host frame): worst backlog
+  > 0.5 s steps down 60/45/30/20/10 (2 s apart); < 0.15 s for 10 s steps up one, never above the chosen `syncRate`.
+  One shared stream, so it follows the slowest teammate. Ctrl+F8 shows the rate and who is furthest behind. The
+  catch-up PAUSE (wait for a teammate > 2 s behind) is not built. Test: battletest.
 - (v0.9.11) Co-op ribbons (`coop_ribbons.lua`, ids from 201): a registry that defines `_G["rib<id>"]` (png from the mod's
   `sprites/` via io.open; a flat fallback if missing), `ribName_<id>`, `ribDesc_<id>`, so the game's ribbon screen
   (draws every owned ribbon in player.ribs order, 72 slots), tooltip, hasRib and announceRibbon just work. Only awarded in

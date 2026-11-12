@@ -26,7 +26,14 @@ return {
             default = 30,
             options = { 30, 45, 60, 20, 10 },
             labels = { "30", "45", "60", "20", "10" },
-            description = "How often the host sends the battle to the other players. Higher: teammates' screens react sooner (less waiting and smoothing), more upload and a bit more work for the host each frame; it can't go above the host's frame rate. Lower (20, 10) for a slow connection. Movement is smoothed either way.",
+            description = "How often the host sends the battle to the other players. Higher: teammates' screens react sooner (less waiting and smoothing), more upload and a bit more work for the host each frame; it can't go above the host's frame rate. Lower (20, 10) for a slow connection. Movement is smoothed either way. With the automatic rate on, this is the most it sends.",
+        },
+        {
+            id = "autoRate",
+            label = "Automatic update rate (host)",
+            type = "checkbox",
+            default = true,
+            description = "When a teammate's game falls behind the battle (their connection can't keep up), the host sends fewer updates per second, and goes back up once they've caught up. Never above the rate chosen above.",
         },
         {
             id = "classicDefense",

@@ -72,6 +72,12 @@ function hud.draw()
             -- what one update costs the host's frame, and how many it actually sends
             rows[#rows + 1] = { string.format("Updates: %d/s, %.1f ms each", math.floor((b.rate or 0) + 0.5), b.tickMs or 0),
                 (b.tickMs or 0) > 8 and 0.95 or 0.75, (b.tickMs or 0) > 8 and 0.6 or 0.85, (b.tickMs or 0) > 8 and 0.4 or 1 }
+            -- the automatic rate: what it is now, and the teammate furthest behind
+            local auto = net.isOn("autoRate", true)
+            local lag, seat = b.lag or 0, b.lagSeat
+            local who = seat and net.seats[seat] and net.seats[seat].name
+            rows[#rows + 1] = { string.format("Rate %d/s%s, behind %.2f s%s", battle.currentRate(), auto and " (auto)" or "",
+                lag, who and (" (" .. who .. ")") or ""), lag > 0.5 and 0.95 or 0.75, lag > 0.5 and 0.6 or 0.85, lag > 0.5 and 0.4 or 1 }
         else
             rows[#rows + 1] = { "Battle: watching", 0.75, 0.85, 1 }
         end

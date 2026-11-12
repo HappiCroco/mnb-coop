@@ -89,7 +89,8 @@ end
 -- ---------------------------------------------------------------- network hooks
 -- host: teammates' orders (coop_squad) and rosters (coop_campaign)
 net.onClientMessage = function(seat, msg)
-    return squad.onClientMessage(seat, msg) or wallet.onClientMessage(seat, msg) or campaign.onClientMessage(seat, msg)
+    return battle.onClientMessage(seat, msg) or squad.onClientMessage(seat, msg) or wallet.onClientMessage(seat, msg)
+        or campaign.onClientMessage(seat, msg)
 end
 -- client: mission results go to the co-op save, the rest is the battle view
 local battleHostMessage = net.onHostMessage

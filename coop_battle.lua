@@ -701,7 +701,8 @@ local function fullMessage(st)
 end
 
 local function hostStart()
-    H = { st = newCaptureState(), pend = {}, snd = {}, acc = 0, seq = 0, joiners = {}, imgSent = {}, gSent = {} }
+    H = { st = newCaptureState(), pend = {}, snd = {}, acc = 0, seq = 0, joiners = {}, imgSent = {}, gSent = {},
+        sentAt = {}, lag = {} }
     battle.hostActive = true
     if battle.soundHooked then scanSourceNames() end
     markSpawnsSeen()
@@ -722,8 +723,96 @@ local function hostStop()
     log("battle sync stopped")
 end
 
+-- ---------------------------------------------------------------- automatic rate
+-- (owner, 2026-11-12) Each teammate reports the last update it has applied ("lag", four
+-- times a second). The host remembers when it sent each update, so now - sentAt, minus the
+-- round trip, is how long that update waited in line: the teammate's backlog. When a backlog
+-- builds, the host sends fewer updates per second (one shared stream, so it follows the
+-- slowest teammate); once everyone has been current for a while it climbs back, never above
+-- the rate chosen in the options. Option autoRate (on by default) turns it off.
+local RATES = { 10, 20, 30, 45, 60 }
+local LAG_HIGH, LAG_LOW = 0.5, 0.15        -- seconds behind: step down above, may step up below
+local STEP_DOWN_GAP, STEP_UP_CALM = 2, 10  -- seconds between steps down; calm needed before a step up
+local LAG_FRESH = 3                        -- a report older than this doesn't count
+local SENT_KEEP = 512                      -- updates whose send time is remembered
+battle.LAG_REPORT = 0.25                   -- teammate: seconds between reports
+
+local function chosenRate()
+    local r = tonumber(net.option("syncRate", 30)) or 30
+    return math.max(1, math.min(60, r))
+end
+
+local function rateBelow(r)
+    for i = #RATES, 1, -1 do if RATES[i] < r then return RATES[i] end end
+    return nil
+end
+
+local function rateAbove(r, cap)
+    for i = 1, #RATES do if RATES[i] > r then return math.min(RATES[i], cap) end end
+    return cap
+end
+
+-- the updates per second the host sends right now
+function battle.currentRate()
+    local cap = chosenRate()
+    if not H or not net.isOn("autoRate", true) then return cap end
+    return math.min(H.rate or cap, cap)
+end
+
+-- host, every frame: move the rate by the worst backlog
+local function updateRate(now)
+    local cap = chosenRate()
+    if not net.isOn("autoRate", true) then
+        H.rate = cap
+        return
+    end
+    H.rate = math.min(H.rate or cap, cap)
+    local worst, who = 0, nil
+    for seat, l in pairs(H.lag) do
+        if net.seats[seat] and now - l.at < LAG_FRESH and l.v > worst then worst, who = l.v, seat end
+    end
+    battle.stats.lag, battle.stats.lagSeat = worst, who
+    if worst > LAG_HIGH then
+        H.calmSince = nil
+        local lower = rateBelow(H.rate)
+        if lower and now - (H.rateAt or -STEP_DOWN_GAP) >= STEP_DOWN_GAP then
+            H.rate, H.rateAt = lower, now
+            log("%s is %.1f s behind: updates down to %d/s", who and net.seats[who] and net.seats[who].name or "?", worst, lower)
+        end
+    elseif worst < LAG_LOW then
+        H.calmSince = H.calmSince or now
+        if H.rate < cap and now - H.calmSince >= STEP_UP_CALM then
+            H.rate, H.rateAt, H.calmSince = rateAbove(H.rate, cap), now, now
+            log("everyone current: updates up to %d/s", H.rate)
+        end
+    else
+        H.calmSince = nil
+    end
+end
+
+-- Host: a teammate's "lag" report. Returns true if the message is ours.
+function battle.onClientMessage(seat, msg)
+    if type(msg) ~= "table" or msg.t ~= "lag" then return false end
+    if not H then return true end
+    local n = tonumber(msg.n)
+    if not n or n ~= math.floor(n) or n > H.seq or n <= H.seq - SENT_KEEP then return true end
+    local e = H.sentAt[n % SENT_KEEP]
+    if not e or e.n ~= n then return true end
+    local now = love.timer.getTime()
+    local ping = (net.seats[seat] and tonumber(net.seats[seat].ping) or 0) / 1000
+    local v = math.max(0, now - e.t - ping)
+    local l = H.lag[seat]
+    if l then
+        l.v, l.at = l.v * 0.5 + v * 0.5, now
+    else
+        H.lag[seat] = { v = v, at = now }
+    end
+    return true
+end
+
 local function hostTick()
     H.seq = H.seq + 1
+    H.sentAt[H.seq % SENT_KEEP] = { n = H.seq, t = love.timer.getTime() }
     local msg = capture(H.st)
     msg.t, msg.n = "snap", H.seq
     msg.img = imageGlobals(H.imgSent, false)
@@ -773,8 +862,8 @@ function battle.hostUpdate(dt)
     if not H then return end
     hostScanSpawns()
     H.acc = H.acc + dt
-    local rate = tonumber(net.option("syncRate", 30)) or 30 -- (config.lua; at most one per frame)
-    local interval = 1 / math.max(1, math.min(60, rate))
+    updateRate(love.timer.getTime())
+    local interval = 1 / battle.currentRate() -- (config.lua, maybe lowered; at most one per frame)
     if H.acc >= interval then
         H.acc = math.min(H.acc - interval, interval)
         local t0 = love.timer.getTime()
@@ -1015,6 +1104,7 @@ function battle.onHostMessage(msg)
         C.lastAt = now
         C.interval = math.max(0.03, math.min(0.25, C.interval * 0.8 + gap * 0.2))
         applySnap(msg)
+        if type(msg.n) == "number" then C.lastN = msg.n end -- reported back: the automatic rate
     elseif msg.t == "bend" then
         if battle.inDebrief() then
             -- the host left the mission report: this teammate keeps their own copy, as it
@@ -1123,6 +1213,11 @@ function battle.clientUpdate(dt)
     end
     battle.startBackground()
     local now = love.timer.getTime()
+    -- which update I'm on, a few times a second: the host lowers its rate if I fall behind
+    if C.lastN and now - (C.lagSentAt or 0) >= battle.LAG_REPORT then
+        C.lagSentAt = now
+        pcall(net.sendToHost, { t = "lag", n = C.lastN })
+    end
     for el, it in pairs(C.interp) do
         local a = math.min(1, (now - it.t0) / C.interval)
         for f, p in pairs(it) do
@@ -1325,6 +1420,7 @@ battle._test = {
     getClient = function() return C end,
     setHost = function(h) H = h end,
     scanSourceNames = scanSourceNames,
+    updateRate = function(now) return updateRate(now) end,
 }
 
 return battle
