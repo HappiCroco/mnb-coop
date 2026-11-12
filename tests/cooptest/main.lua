@@ -147,6 +147,16 @@ check(not hostNet.allReady() and not c1.myReady() and not c2.myReady(), "after a
 c1.setReady(true) c2.setReady(true)
 waitSec(1.2)
 check(hostNet.allReady(), "ready again for the next one")
+-- where everyone is, on their cards (owner: "he's in the battle report, he's in the campaign")
+c1.setWhere("report")
+hostNet.setWhere("campaign")
+waitSec(1.2)
+check(hostNet.seats[2].where == "report" and c2.seats[2] and c2.seats[2].where == "report", "a friend's place reaches the host and the others")
+check(c1.seats[1] and c1.seats[1].where == "campaign", "the host's place reaches the friends")
+c1.sendToHost({ t = "where", w = "hacked" })
+c1.setReady(true) -- keeps the ready state the later checks expect
+waitSec(1.2)
+check(hostNet.seats[2].where == "report", "an unknown place is ignored")
 -- a big avatar over real enet (sent in pieces): it arrives, nobody is dropped for "flooding",
 -- and the lobby keeps flowing after it (owner, 2026-11-11: a friend stuck at 0/3)
 local function pngHead(w, h)

@@ -288,6 +288,11 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   used to aim at the west-most German anywhere, i.e. the left side's) and mirrors a left vehicle's new target;
   far-right retreats (≥ 11000, set outside the AIs too) become x −700. Kept right: Goliaths (tankAI blows them up
   "behind our lines" by x), Wespe/Nebel/howitzer, side-rolling carts. Tests: defensetest.
+- (v0.9.8) READY is enforced: the host's starts (menu_goButton, menu_classicButton, a fresh preMNB2Admin, the Classic
+  tile) wait for every friend (`net.readyToStart`, pop-up names who), and a started battle resets everyone. A friend's
+  click shows at once (`pendingReady`) until the host's lobby agrees. Host pause rides in `view.pz`: friends see a
+  PAUSED banner. Each card shows where that player is (`net.WHERE`: lobby, campaign, classic, battle, report, menu;
+  `lobby.updatePresence` sends it on change and every 4 s). Friends' CO-OP CLASSIC tile is drawn closed.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.
