@@ -333,8 +333,17 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - (v0.9.11) Lobby layout (owner, 2026-11-12): CAREER and SQUAD sit in column 1 of the lobby too, the same tiles in the
   same place as on the co-op page and the game's main menu; they open the co-op profile (`campaign.enter`) and the
   game's own screen, and its Back returns to the page they came from (`lobby.returnPage` / `lobby.backPage()`, used by
-  campaign.update). HOST / JOIN (CANCEL while connecting, READY in a lobby) moved to buttons right of the party cards;
-  CLOSE LOBBY / LEAVE LOBBY is the last link of the connection tile. Test: hubtest.
+  campaign.update). HOST A LOBBY / JOIN / CANCEL / CLOSE LOBBY / LEAVE LOBBY are links in the connection tile (five
+  slots). No READY on the lobby any more: see the ready room. Test: hubtest.
+- (v0.9.11) READY ROOM (owner, 2026-11-12: "the ready appears when the host chooses the game mode... everyone on the
+  same screen... you click ready, and then the host clicks start"). `lobby.gate(title, retry)` replaces the old
+  `readyToStart` gates in menu_goButton and preMNB2Admin (now every call, a carried-on Classic battle too); picking a
+  Classic mode (menu_classicButton, the CO-OP CLASSIC tile) is free. If a friend isn't ready, the host goes to the room
+  page with the start saved as a closure, and `net.stage` (the title) rides on the lobby broadcast; `lobby.updateRoom`
+  (every frame) pulls friends who aren't watching a battle into the room and back to the lobby when the stage goes.
+  START (all ready) goes back to the page the start came from and replays it; Cancel goes back and resets READY.
+  Known: the para button spends its credit before preMNB2Admin, so cancelling the room after it costs that credit.
+  Tests: cooptest (stage sync), hubtest (gate, start, cancel, a friend pulled in and out).
 - (v0.9.11) Co-op ribbons (`coop_ribbons.lua`, ids from 201): a registry that defines `_G["rib<id>"]` (png from the mod's
   `sprites/` via io.open; a flat fallback if missing), `ribName_<id>`, `ribDesc_<id>`, so the game's ribbon screen
   (draws every owned ribbon in player.ribs order, 72 slots), tooltip, hasRib and announceRibbon just work. Only awarded in

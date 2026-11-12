@@ -494,6 +494,8 @@ local function clientReceive(msg)
     elseif msg.t == "refuse" then
         net.status = "Refused: " .. tostring(msg.why)
     elseif msg.t == "lobby" and type(msg.seats) == "table" then
+        -- what the host is getting ready to start (the ready room), or nil
+        net.stage = type(msg.stage) == "string" and (msg.stage:gsub("[%c]", " "):sub(1, 40)) or nil
         for i = 1, net.MAX_SEATS do
             local card = msg.seats[i] and cleanCard(msg.seats[i]) or nil
             if card then card.avatar = avatarImages[i] end
@@ -540,6 +542,7 @@ local function reset(status)
     net.joinCode, net.blocked = nil, 0
     net.pendingReady, net.pendingReadyAt = nil, nil
     net.modDiffs = {}
+    net.stage = nil
     net.role, net.mySeat, net.seats = "offline", nil, {}
     net.status = status or "Offline"
     if net.onReset then
@@ -659,6 +662,7 @@ net.WHERE = {
     battle = { "IN BATTLE", "In the battle" },
     report = { "REPORT", "Reading the battle report" },
     menu = { "MENU", "In the game's menus" },
+    room = { "READY UP", "In the ready room" },
 }
 
 -- This machine's place: mine on my card (the host's at once; a friend's goes to the host).
@@ -673,6 +677,18 @@ function net.setWhere(w)
     elseif net.role == "client" then
         if mine then mine.where = w end
         send(server, { t = "where", w = w })
+    end
+end
+
+-- The ready room (owner, 2026-11-12): the host picked a mode and waits for every friend's READY.
+-- net.stage is its title ("CO-OP CLASSIC"); it rides on the lobby update, so a friend who joins
+-- late is pulled in too. nil = no ready room. Host only sets it.
+net.stage = nil
+function net.setStage(title)
+    if net.role ~= "host" then return end
+    if net.stage ~= title then
+        net.stage = title
+        lastLobbySent = 0
     end
 end
 
@@ -814,7 +830,7 @@ function net.update()
             for seat, peer in pairs(seatPeer) do
                 if net.seats[seat] then net.seats[seat].ping = peer:round_trip_time() end
             end
-            broadcast({ t = "lobby", seats = lobbyView() })
+            broadcast({ t = "lobby", seats = lobbyView(), stage = net.stage })
             lastLobbySent = now
         end
     end

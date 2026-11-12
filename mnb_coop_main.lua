@@ -67,8 +67,11 @@ local coopPreMNB2 = preMNB2Admin
 function preMNB2Admin(...)
     -- a new field, or a battle under way being loaded (mnb2.lua:7, 262)
     local fresh = not (type(player) == "table" and player.ui_gameStarted ~= 0 and player.ui_gameStarted ~= nil)
-    -- a new Classic battle (the deploy buttons, urb_engine.lua:8824-8914) waits for every friend's READY
-    if fresh and not net.readyToStart() then return end
+    -- a Classic battle, new (the deploy buttons, urb_engine.lua:8824-8914) or carried on
+    -- (urb_engine.lua:40033), waits for every friend's READY: the ready room opens and replays
+    -- this call on START (the buttons set mnb2SubGame first, so the replay starts the same mode)
+    local args = { n = select("#", ...), ... }
+    if not lobby.gate("CO-OP CLASSIC", function() preMNB2Admin(unpack(args, 1, args.n)) end) then return end
     local result = coopPreMNB2(...)
     local ok, err = pcall(defense.afterSetup, fresh)
     if not ok then print("[mnb_coop] defense setup: " .. tostring(err)) end
@@ -209,6 +212,7 @@ local window = require("includes/mods/mnb_coop/coop_window")
 local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
+    pcall(lobby.updateRoom) -- friends follow the host into and out of the ready room
     pcall(lobby.updatePresence) -- where I am, for the others' lobby cards
     local okw, errw = pcall(window.update)
     if not okw then print("[mnb_coop] window: " .. tostring(errw)) end
@@ -257,8 +261,10 @@ function menu_goButton(...)
         mnbCoop.notice("Only the host starts missions")
         return
     end
-    -- the host waits for every friend's READY; a mission that starts uses it up
-    if not net.readyToStart() then return end
+    -- the host waits for every friend's READY (the ready room, replaying GO on START);
+    -- a mission that starts uses it up
+    local args = { n = select("#", ...), ... }
+    if not lobby.gate("CO-OP CAMPAIGN", function() menu_goButton(unpack(args, 1, args.n)) end) then return end
     if campaign.active then
         local ok, err = pcall(campaign.arrangeSquad)
         if not ok then print("[mnb_coop] squad: " .. tostring(err)) end
@@ -274,11 +280,7 @@ function menu_classicButton(...)
         mnbCoop.notice("Only the host starts battles")
         return
     end
-    -- Classic picks a mode or carries on a battle under way: both need every friend's READY
-    if not net.readyToStart() then
-        defense.armed = false
-        return
-    end
+    -- (no READY here: picking a mode is free; the start itself waits in the ready room)
     -- the co-op Classic tile arms this; the game's own Classic button doesn't
     defense.wanted, defense.armed = defense.armed, false
     return coopClassic(...)

@@ -72,5 +72,48 @@ coopSquadButton()
 check(menuPage == 3, "lobby Squad opens the squad screen")
 coopBackButton()
 check(menuPage == 1 and not campaign.active, "Back from the lobby still leaves co-op")
+
+-- the ready room (READY is asked once the host picks a mode)
+local net = require("includes/mods/mnb_coop/coop_net")
+net.role, net.mySeat = "host", 1
+net.seats = { { name = "Host" }, { name = "Bob", ready = false } }
+menuPage = 77 -- the host's mode select
+local started = 0
+local function start() started = started + 1 end
+check(not lobby.gate("CO-OP CLASSIC", start) and menuPage == lobby.getRoomPage() and net.stage == "CO-OP CLASSIC", "a friend not ready: the ready room opens")
+buttons = {}
+lobby.registerButtons()
+at = {}
+for _, b in ipairs(buttons) do at[b.label] = b end
+check(at.coopRoomStart and at.coopRoomCancel and not at.coopRoomReady, "host: START and Cancel")
+ok, err = pcall(lobby.draw)
+check(ok, "ready room draws (host): " .. tostring(err))
+coopRoomStartButton()
+check(started == 0 and menuPage == lobby.getRoomPage(), "START waits for Bob")
+net.seats[2].ready = true
+coopRoomStartButton()
+check(started == 1 and menuPage == 77 and net.stage == nil and lobby.room == nil, "everyone ready: START replays the start from the page it came from")
+check(lobby.gate("CO-OP CLASSIC", start), "everyone ready already: no ready room")
+net.seats[2].ready = false
+lobby.gate("CO-OP CAMPAIGN", start)
+coopRoomCancelButton()
+check(started == 1 and menuPage == 77 and net.stage == nil, "Cancel goes back without starting")
+-- a friend follows the host's stage
+net.role, net.mySeat = "client", 2
+net.stage = "CO-OP CLASSIC"
+menuPage = lobby.getPage()
+lobby.updateRoom()
+check(menuPage == lobby.getRoomPage(), "a friend is pulled into the ready room")
+buttons = {}
+lobby.registerButtons()
+at = {}
+for _, b in ipairs(buttons) do at[b.label] = b end
+check(at.coopRoomReady and not at.coopRoomStart, "friend: READY, no START")
+ok, err = pcall(lobby.draw)
+check(ok, "ready room draws (friend): " .. tostring(err))
+net.stage = nil
+lobby.updateRoom()
+check(menuPage == lobby.getPage(), "the room closes: the friend is back in the lobby")
+net.role, net.mySeat, net.seats = "offline", nil, {}
 print(("%d passed, %d failed"):format(passes, fails))
 love.event.quit(fails == 0 and 0 or 1)

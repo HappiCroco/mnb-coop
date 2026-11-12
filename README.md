@@ -18,9 +18,10 @@ Everyone playing together needs the same version. The co-op's options (port, joi
 QuarterMaster's Mod Options screen (QuarterMaster 1.8 or newer); without it the defaults are used.
 
 ## Play
-Main menu → **Multiplayer**. The host clicks HOST and shares the address (for online play behind a router, a
-[playit.gg](https://playit.gg) UDP tunnel works); friends paste it and join. Friends press **READY**; the host can start
-once everyone is ready. Each card shows where that player is (lobby, campaign, battle report...).
+Main menu → **Multiplayer**. The host clicks HOST A LOBBY and shares the address (for online play behind a router, a
+[playit.gg](https://playit.gg) UDP tunnel works); friends paste it and click JOIN. When the host picks a mode, everyone
+lands on the ready room: friends press **READY**, then the host presses **START**. Each card shows where that player
+is (lobby, campaign, battle report...).
 
 ## Other mods: do we all need the same ones?
 Not always. The host's game runs the battle; everyone else sees it and sends orders. That decides what matters:
