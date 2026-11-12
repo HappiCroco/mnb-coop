@@ -84,14 +84,30 @@ function win.shrink(s)
     if moved then love.mousemoved = function(x, y, dx, dy, ...) return moved(x / s, y / s, dx / s, dy / s, ...) end end
 end
 
+-- Two copies on this PC: they run under the same Steam account, so the host's seat and a
+-- friend's seat carry the same Steam id (a real friend always has another). Joining
+-- 127.0.0.1 counts too, whatever the ids.
+local function sameAccount(a, b)
+    return type(a) == "table" and type(b) == "table" and a.steamId ~= nil and a.steamId ~= "" and a.steamId == b.steamId
+end
+
+function win.bothOnThisPC()
+    local seats = net.seats or {}
+    if net.role == "client" then
+        return net.samePC == true or sameAccount(seats[1], seats[net.mySeat or 0])
+    elseif net.role == "host" then
+        if net.friendOnSamePC then return true end
+        for i = 2, net.MAX_SEATS or 3 do
+            if sameAccount(seats[1], seats[i]) then return true end
+        end
+    end
+    return false
+end
+
 -- every frame: once both copies are known to be on this PC, lay the windows out
 function win.update()
     local which
-    if net.role == "client" and net.samePC then
-        which = "bottom"
-    elseif net.role == "host" and net.friendOnSamePC then
-        which = "top"
-    end
+    if win.bothOnThisPC() then which = net.role == "host" and "top" or "bottom" end
     if not which or win.placedAs == which or not net.isOn("stackWindows", true) then return end
     win.placedAs = which
     local _, _, flags = love.window.getMode()

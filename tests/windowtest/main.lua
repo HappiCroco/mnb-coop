@@ -25,5 +25,23 @@ s, x, y = win.layout(3840, 2160, "top")
 s2, x2, y2 = win.layout(3840, 2160, "bottom")
 check(s == 1 and y == 0 and y2 >= 720 and x == x2, "3840x2160: stacked at full size")
 
+-- who counts as "both copies on this PC"
+local net = require("includes/mods/mnb_coop/coop_net")
+net.role, net.mySeat = "client", 2
+net.seats = { { name = "Me", steamId = "765" }, { name = "Me", steamId = "765" } }
+check(win.bothOnThisPC(), "friend copy: same Steam id as the host, any address")
+net.seats[2].steamId = "999"
+net.samePC = false
+check(not win.bothOnThisPC(), "a real friend (other Steam id) is never moved")
+net.samePC = true
+check(win.bothOnThisPC(), "joining 127.0.0.1 counts too")
+net.role, net.samePC = "host", false
+net.seats = { { name = "Me", steamId = "765" }, nil, { name = "Me", steamId = "765" } }
+check(win.bothOnThisPC(), "host: a seat with its own Steam id")
+net.seats = { { name = "Me", steamId = "765" }, { name = "Ann", steamId = "999" } }
+check(not win.bothOnThisPC(), "host with a real friend: not moved")
+net.seats = { { name = "Me" }, { name = "Me" } }
+check(not win.bothOnThisPC(), "no Steam ids (offline Steam): not guessed")
+
 print(("%d passed, %d failed"):format(passes, fails))
 love.event.quit(fails == 0 and 0 or 1)
