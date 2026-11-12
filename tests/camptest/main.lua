@@ -2,7 +2,7 @@
 -- save files and the real campaign save is never touched.
 local MOD = os.getenv("COOP_DIR")
 local VANILLA = os.getenv("MNB_VANILLA_DIR") or (MOD .. "/../../vanilla-src")
-for _, n in ipairs({ "coop_codec", "coop_profile", "coop_net", "coop_campaign" }) do package.preload["includes/mods/mnb_coop/" .. n] = function() return assert(loadfile(MOD .. "/" .. n .. ".lua"))() end end
+for _, n in ipairs({ "coop_codec", "coop_profile", "coop_mods", "coop_net", "coop_campaign" }) do package.preload["includes/mods/mnb_coop/" .. n] = function() return assert(loadfile(MOD .. "/" .. n .. ".lua"))() end end
 createAlliedSoldier = function(d) d.faction = "allied" d.playerControlled = 1 d.npc = 0 d.dead = 0 end assignNextPerk = function() end randNbr = function() return 1 end
 package.preload["includes/ser"] = function() return assert(loadfile(VANILLA .. "/includes/ser.lua"))() end
 local fails, passes = 0, 0

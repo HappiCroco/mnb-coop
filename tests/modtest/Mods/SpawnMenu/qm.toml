@@ -1,0 +1,9 @@
+[manifest]
+version = "2.0.0"
+priority = 50
+
+[[patches]]
+[patches.copy]
+target = "main.lua"
+position = "append"
+payload = "-- test fixture"

@@ -6,6 +6,7 @@ local function pre(name, file)
 end
 pre("includes/mods/mnb_coop/coop_codec", "coop_codec.lua")
 pre("includes/mods/mnb_coop/coop_profile", "coop_profile.lua")
+pre("includes/mods/mnb_coop/coop_mods", "coop_mods.lua")
 pre("includes/mods/mnb_coop/coop_net", "coop_net.lua")
 
 local fails, passes = 0, 0
@@ -123,6 +124,7 @@ pump(60)
 check(c2.mySeat == 3 and hostNet.playerCount() == 3, "second client seated")
 waitSec(1.2)
 check(c1.playerCount() == 3 and c2.playerCount() == 3, "clients see 3 players")
+check(type(hostNet.modDiffs[2]) == "table" and type(c1.modDiffs[1]) == "table", "mod lists swapped at join (host per friend, friend against host)")
 -- READY (owner, 2026-11-12: "allows me to start even though not everyone is ready")
 check(not hostNet.readyToStart() and hostNet.status:find("to press READY") ~= nil, "host can't start before the friends are ready")
 -- a friend's click shows at once and the next click flips from it, not from an older lobby view

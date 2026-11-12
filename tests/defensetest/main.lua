@@ -1,6 +1,6 @@
 -- Headless test of coop_defense.lua: the middle layout, both-side waves, mirrored AI, the radar.
 local MOD = os.getenv("COOP_DIR")
-for _, n in ipairs({ "coop_codec", "coop_profile", "coop_net", "coop_defense" }) do
+for _, n in ipairs({ "coop_codec", "coop_profile", "coop_mods", "coop_net", "coop_defense" }) do
   package.preload["includes/mods/mnb_coop/" .. n] = function() return assert(loadfile(MOD .. "/" .. n .. ".lua"))() end
 end
 local fails, passes = 0, 0

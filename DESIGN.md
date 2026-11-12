@@ -293,6 +293,13 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   click shows at once (`pendingReady`) until the host's lobby agrees. Host pause rides in `view.pz`: friends see a
   PAUSED banner. Each card shows where that player is (`net.WHERE`: lobby, campaign, classic, battle, report, menu;
   `lobby.updatePresence` sends it on change and every 4 s). Friends' CO-OP CLASSIC tile is drawn closed.
+- (v0.9.8) Mod check (coop_mods.lua, owner: "say which mod is missing on which side and how serious"): each machine
+  lists `<game>/Mods` (LuaJIT ffi FindFirstFileA, no console window; mod.json id/name/version/"coop", code = qm.toml
+  has patches or a top-level .lua; skips qm, mnb_coop, `_`/`.` folders, `"enabled": false`, folders without
+  mod.json/qm.toml; at most 64). Sent in hello / welcome, cleaned on receipt. Severity: pictures-only or friend-only
+  code or `"coop": "host"|"any"` → FINE; unmarked code only on the host or code version differs → CHECK; a `"both"`
+  mod missing or in another version → SERIOUS. Pop-up at join when CHECK or worse, "!" on the card, the list in the
+  card's tooltip (host: each friend; friend: the host's card). README explains it for players. Test: modtest.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.

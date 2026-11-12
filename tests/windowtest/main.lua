@@ -1,6 +1,6 @@
 -- Headless test of coop_window.lua's layout: two 1280x720 game windows on one screen.
 local MOD = os.getenv("COOP_DIR")
-for _, n in ipairs({ "coop_codec", "coop_profile", "coop_net", "coop_window" }) do
+for _, n in ipairs({ "coop_codec", "coop_profile", "coop_mods", "coop_net", "coop_window" }) do
   package.preload["includes/mods/mnb_coop/" .. n] = function() return assert(loadfile(MOD .. "/" .. n .. ".lua"))() end
 end
 local fails, passes = 0, 0

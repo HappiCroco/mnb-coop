@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "id": "spawn_menu",
+  "name": "F7 Spawn Menu",
+  "version": "2.0.0",
+  "coop": "host"
+}

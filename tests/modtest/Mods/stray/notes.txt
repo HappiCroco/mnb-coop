@@ -1,0 +1,1 @@
+not a mod: no mod.json, no qm.toml

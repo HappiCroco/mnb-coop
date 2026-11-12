@@ -111,7 +111,7 @@ check(same(log, { "coop", "game" }), "QM.Input not in front: a plain wrap")
 
 -- 5. options: QM 1.8 keeps the player's choice in QM.settings[<mod id>] (GMenu is gone); net.option reads
 -- it when modLibrary isn't installed, then the old GMenu's saved value, then the default
-for _, n in ipairs({ "coop_codec", "coop_profile", "coop_net" }) do
+for _, n in ipairs({ "coop_codec", "coop_profile", "coop_mods", "coop_net" }) do
   package.preload["includes/mods/mnb_coop/" .. n] = function() return assert(loadfile(MOD .. "/" .. n .. ".lua"))() end
 end
 currentVersion = "x"

@@ -1,7 +1,7 @@
 -- Own rosters: a whole co-op mission with three players, headless.
 local MOD = os.getenv("COOP_DIR")
 local VANILLA = os.getenv("MNB_VANILLA_DIR") or (MOD .. "/../../vanilla-src")
-for _, n in ipairs({ "coop_codec", "coop_profile", "coop_net", "coop_campaign" }) do
+for _, n in ipairs({ "coop_codec", "coop_profile", "coop_mods", "coop_net", "coop_campaign" }) do
   package.preload["includes/mods/mnb_coop/" .. n] = function() return assert(loadfile(MOD .. "/" .. n .. ".lua"))() end
 end
 package.preload["includes/ser"] = function() return assert(loadfile(VANILLA .. "/includes/ser.lua"))() end

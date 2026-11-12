@@ -5,6 +5,7 @@ local function pre(name, file)
 end
 pre("includes/mods/mnb_coop/coop_codec", "coop_codec.lua")
 pre("includes/mods/mnb_coop/coop_profile", "coop_profile.lua")
+pre("includes/mods/mnb_coop/coop_mods", "coop_mods.lua")
 pre("includes/mods/mnb_coop/coop_net", "coop_net.lua")
 pre("includes/mods/mnb_coop/coop_battle", "coop_battle.lua")
 
