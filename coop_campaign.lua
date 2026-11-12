@@ -789,7 +789,14 @@ function campaign.newWar(freshStart)
     campaign.track()
     local p = campaign.profile
     if type(p) ~= "table" then return false, "no co-op save" end
-    if type(p.coopMission) == "table" then return false, "finish the mission first" end
+    if type(p.coopMission) == "table" then
+        -- a mission still under way in this save (the game was left mid-battle): it's
+        -- abandoned, everyone's soldiers go home first as after any mission. (This used to
+        -- refuse with "finish the mission first", which read as New war doing nothing.)
+        campaign.settleMission()
+        p = campaign.profile
+        if type(p) ~= "table" or type(p.coopMission) == "table" then return false, "could not close the mission under way" end
+    end
     campaign.normalize(p)
     local keep = {}
     if not freshStart then
