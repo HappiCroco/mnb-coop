@@ -141,6 +141,41 @@ check(sl2 + sr2 == 3 and (sl2 == 3) == (sr == 3), "the next special wave comes f
 local leftOnes = sl == 3 and n4 or n5
 check(T[leftOnes + 1].x <= 6300 - defense.SPAWN_CLEAR, "a left special wave is mirrored past the clear zone")
 for i = #T, n4 + 1, -1 do table.remove(T, i) end
+-- two specials rolled in the same wave share one side; the next wave's go to the other
+local special2 = defense.wrapSpecial(function()
+  for k = 1, 2 do table.insert(player.deployedTroops, troop("axis", hi + 2500, 150 + k * 100)) end
+end)
+local twoInWave = defense.wrapWave(function() special() special2() end)
+local n6 = #T
+twoInWave()
+local dl, dr = sides(n6 + 1)
+check(dl + dr == 5 and (dl == 0 or dr == 0), "two specials in one wave: one side for both (" .. dl .. " left, " .. dr .. " right)")
+local n7 = #T
+twoInWave()
+local dl2, dr2 = sides(n7 + 1)
+check(dl2 + dr2 == 5 and (dl2 == 5) == (dr == 5), "the next wave's specials: the other side")
+for i = #T, n6 + 1, -1 do table.remove(T, i) end
+-- Jägers appear behind the front (west of the radar here): the wave's side still decides
+local jagers = defense.wrapSpecial(function()
+  for k = 1, 3 do table.insert(player.deployedTroops, troop("axis", 5400, 150 + k * 100)) end
+end)
+local jagWave = defense.wrapWave(function() jagers() end)
+local seen = {}
+for _ = 1, 2 do
+  local n8 = #T
+  jagWave()
+  local jl, jr = sides(n8 + 1)
+  check(jl + jr == 3 and (jl == 0 or jr == 0), "Jägers: one side, not doubled (" .. jl .. " left, " .. jr .. " right)")
+  if jr == 3 then
+    seen.R = true
+    check(T[n8 + 1].x >= 6300 + defense.SPAWN_CLEAR, "Jägers sent right: past the clear zone on the east")
+  elseif jl == 3 then
+    seen.L = true
+    check(T[n8 + 1].x <= 6300 - defense.SPAWN_CLEAR, "Jägers sent left: past the clear zone on the west")
+  end
+end
+check(seen.L and seen.R, "Jägers come from either side, by turns")
+for i = #T, n6 + 1, -1 do table.remove(T, i) end
 -- a paradrop that is part of a special wave drops on its side only
 local dropsS = {}
 local fjS = defense.wrapFjDrop(function(x) dropsS[#dropsS + 1] = x end)

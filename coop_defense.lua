@@ -248,7 +248,12 @@ function defense.wrapWave(orig)
         if not defense.active() then return orig(...) end
         local troops = player.deployedTroops
         local n0 = #troops
-        local r = { orig(...) }
+        -- every special wave this wave rolls comes from the same side (wrapSpecial)
+        defense.inWave, defense.waveSpecialSide = true, nil
+        local r = { pcall(orig, ...) }
+        defense.inWave, defense.waveSpecialSide = false, nil
+        if not r[1] then error(r[2], 0) end
+        table.remove(r, 1)
         local n1 = #troops
         local lo, hi = alliedSpan()
         local twins = net.playerCount() > 1
@@ -278,19 +283,30 @@ function defense.wrapWave(orig)
     end
 end
 
--- Special waves (owner, 2026-11-12: "should only focus on one side"): the boss waves
--- spawnMNB2Wave rolls (mnb2.lua:750-793: FJ, SS, Wer, Volks, Grenadier, Luft, Feld, snipers,
--- air drop...) come whole from ONE side, alternating, never doubled. They run inside
--- spawnMNB2Wave, so their Germans get their side here, before wrapWave looks for new ones
--- (it only takes Germans with no side yet). Their vehicles stay right, like all vehicles.
+-- Special waves (owner, 2026-11-12: "should only focus on one side", "they are very strong"):
+-- the boss waves spawnMNB2Wave rolls (mnb2.lua:738-793: Jägers, FJ, SS, Wer, Volks, Grenadier,
+-- Luft, Feld, snipers, air drop...) come whole from ONE side, never doubled. Each is rolled on
+-- its own, so one wave can bring two or three: all of a wave's specials share one side, and
+-- the next wave's go to the other. They run inside spawnMNB2Wave, so their Germans get their
+-- side here, before wrapWave looks for new ones (it only takes Germans with no side yet).
+-- Their vehicles stay right, like all vehicles.
 defense.specialFlip = 0
 defense.specialSide = nil -- set while a special wave is being made (fjDrop drops on that side only)
+defense.inWave = false    -- inside spawnMNB2Wave (wrapWave)
+defense.waveSpecialSide = nil -- the side this wave's specials use (set by its first special)
+
+local function specialSideNow()
+    if defense.inWave and defense.waveSpecialSide then return defense.waveSpecialSide end
+    defense.specialFlip = defense.specialFlip + 1
+    local side = defense.specialFlip % 2 == 0 and "L" or "R"
+    if defense.inWave then defense.waveSpecialSide = side end
+    return side
+end
 
 function defense.wrapSpecial(orig)
     return function(...)
         if not defense.active() or defense.specialSide then return orig(...) end
-        defense.specialFlip = defense.specialFlip + 1
-        local side = defense.specialFlip % 2 == 0 and "L" or "R"
+        local side = specialSideNow()
         local troops = player.deployedTroops
         local n0 = #troops
         defense.specialSide = side
@@ -302,8 +318,10 @@ function defense.wrapSpecial(orig)
         for i = n0 + 1, #troops do
             local t = troops[i]
             if isGerman(t) and t.coopSide == nil then
-                if t.x < defense.radarX then
-                    t.coopSide = "L" -- dropped on the west already (fjDrop below)
+                -- the wave's side decides, wherever the game put him (Jägers appear behind the
+                -- front, alliedFrontLine() - 1200, which is west of the radar here)
+                if side == "L" and t.x < defense.radarX then
+                    t.coopSide = "L" -- already on the west (fjDrop below, Jägers)
                     if t.x > westMax then defense.placeAt(t, westMax - randNbr(200)) end
                 elseif side == "L" then
                     local x = math.max(defense.LEFT_EDGE + 200, math.floor(lo - (math.max(t.x, eastMin) - hi)))
