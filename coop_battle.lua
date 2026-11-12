@@ -772,6 +772,9 @@ function battle.hostUpdate(dt)
     if H.acc >= interval then
         H.acc = math.min(H.acc - interval, interval)
         hostTick()
+        -- out now: enet would otherwise send it at the next frame's service call, one
+        -- frame later (the update is made after this frame's service, in hostUpdate)
+        net.flush()
     end
 end
 

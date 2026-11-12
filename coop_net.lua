@@ -199,6 +199,11 @@ function net.broadcastRaw(data, channel, skipSeats)
     end
 end
 
+-- Send what's queued now instead of at the next frame's service call.
+function net.flush()
+    if host then pcall(host.flush, host) end
+end
+
 -- Client: an order or a roster for the host (coop_squad.lua, coop_campaign.lua).
 function net.sendToHost(msg)
     if net.role == "client" and server then send(server, msg) end
