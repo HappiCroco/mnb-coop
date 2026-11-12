@@ -143,6 +143,23 @@ check(math.abs(shownX - (hostP.deployedTroops[1].x - 50)) < 0.01, "smoothing sta
 settle()
 check(math.abs(battle._mirror.deployedTroops[1].x - hostP.deployedTroops[1].x) < 0.01, "smoothing reaches the new position")
 
+-- a moving soldier whose next update changes something else (here his timer) keeps gliding:
+-- he used to jump to the end of his move (jitter)
+player = hostP
+hostP.deployedTroops[1].x = hostP.deployedTroops[1].x + 60
+msg = T.capture(st) msg.t = "snap"
+send(msg)
+local startX = battle._mirror.deployedTroops[1].x
+player = hostP
+hostP.deployedTroops[1].timer = (hostP.deployedTroops[1].timer or 0) + 1
+msg = T.capture(st) msg.t = "snap"
+send(msg)
+local midX = battle._mirror.deployedTroops[1].x
+check(math.abs(midX - startX) < 1 and math.abs(midX - hostP.deployedTroops[1].x) > 50,
+  "another field changing doesn't make a moving soldier jump (" .. midX .. ")")
+settle()
+check(math.abs(battle._mirror.deployedTroops[1].x - hostP.deployedTroops[1].x) < 0.01, "and he still arrives")
+
 -- remove a troop in the middle, add one
 table.remove(hostP.deployedTroops, 2)
 hostP.deployedTroops[#hostP.deployedTroops + 1] = troop(44, 40, 40)
@@ -323,6 +340,19 @@ hostP.gameState = 0
 send({ t = "bend" })
 check(battle.viewing and battle.inDebrief() and menuPage == 4 and box3Timer == 2.5 and T.getClient().hostLeft == true,
     "host left the report: the teammate's copy stays open as it was")
+
+-- the teammate's Esc menu
+battle.keypressed("escape")
+check(battle.menuOpen, "Esc opens the teammate's menu")
+check(battle.menuClick(1, 1) and battle.menuOpen and battle.viewing, "a click beside the buttons keeps it open")
+local okm, errm = pcall(battle.drawOverlay)
+check(okm, "the menu draws: " .. tostring(errm))
+local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+local firstY = (sh - (3 * 44 + 2 * 10)) / 2 + 20
+check(battle.menuClick(sw / 2, firstY + 5) and not battle.menuOpen and battle.viewing, "Back to the battle closes it, still watching")
+battle.keypressed("f10")
+battle.keypressed("escape")
+check(not battle.menuOpen, "F10 opens it too, Esc closes it")
 
 -- the teammate leaves the report on their own (Back), before the host does
 battle.leaveReport()

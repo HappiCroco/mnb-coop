@@ -395,7 +395,8 @@ local function onKeypressed(key, ...)
     -- G: give TP to the next player (Classic wallets, coop_wallet.lua)
     if key == wallet.GIVE_KEY and wallet.keypressed(key) then return end
     if battle.viewing then
-        -- teammate in the host's battle: own selection keys, own view keys, Esc twice to leave
+        -- teammate in the host's battle: own selection keys, own view keys, Esc for the menu
+        if key == "escape" or key == "f10" then return battle.keypressed(key) end
         local ok, used = pcall(squad.clientKeypressed, key)
         if ok and used then return end
         if VIEW_KEYS[key] then
@@ -432,16 +433,28 @@ coopKeyreleased = qmInput.wrap("keyreleased", function() return onKeyreleased en
 -- teammates' H and Alt release are run through the game's own key handlers
 squad.setGameKeys(coopKeypressed, coopKeyreleased)
 
--- Pause > Options saves and leaves the battle (urb_engine.lua:45012): not while teammates are in it.
+-- Pause > Options is the game's "save the battle and leave it" (urb_engine.lua:45012). With
+-- teammates in the battle it is the host's way back to the lobby (owner, 2026-11-12: "there's
+-- no way to return back to the multiplayer screen"): a second click within 4 s saves the
+-- battle as the game does, and everyone lands in the lobby (the teammates' view ends with it).
 local coopPauseOption = pause_optionButton
+local leaveArmedAt = nil
 function pause_optionButton(...)
     if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameState == 0 then
-        -- the game's own battle announcement, and its "can't" sound
-        if not pcall(anounceStuff, "Options are closed while teammates are in the battle") then
-            mnbCoop.notice("Options are closed while teammates are in the battle")
+        local now = love.timer.getTime()
+        if not (leaveArmedAt and now - leaveArmedAt < 4) then
+            leaveArmedAt = now
+            local text = "Click Options again: save the battle and take everyone back to the lobby"
+            if not pcall(anounceStuff, text) then mnbCoop.notice(text) end
+            return
         end
-        pcall(function() poop:clone():play() end)
-        return
+        leaveArmedAt = nil
+        local r = coopPauseOption and { coopPauseOption(...) } or {}
+        pause = 0
+        menuPage = lobby.getPage()
+        mouseOverText = ""
+        net.status = "The battle is saved; you're all back in the lobby"
+        return unpack(r)
     end
     if coopPauseOption then return coopPauseOption(...) end
 end
@@ -476,6 +489,7 @@ end
 local coopMousepressed
 local function onMousepressed(x, y, button, ...)
     if battle.viewing then
+        if battle.menuOpen then return end -- the teammate's Esc menu takes the click (on release)
         pcall(squad.clientMousepressed, x, y, button)
         return
     end
@@ -494,6 +508,10 @@ end
 local coopMousereleased
 local function onMousereleased(x, y, button, ...)
     if battle.viewing then
+        if battle.menuOpen then
+            pcall(battle.menuClick, x, y)
+            return
+        end
         local ok, err = pcall(squad.clientMousereleased, x, y, button)
         if not ok then print("[mnb_coop] order: " .. tostring(err)) end
         return
