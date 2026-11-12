@@ -264,6 +264,12 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   for the host"): Back on the report (32,686 60x30) → `battle.leaveReport` → stopView, back to the lobby, still in
   the session. The host's later report snaps are ignored (no view); its next battle's `bfull` brings them in again;
   their results arrive when the host leaves its report and are applied at once (not watching).
+- (v0.9.7) QuarterMaster 1.8 (2026-11-12) has its own input layer (`QM.Input.handle*` in love.keypressed/keyreleased/
+  mousepressed/mousereleased) and installs it twice: on module load and from a patch in main.lua, each time keeping
+  love.* as its `orig*` unless love.* is already its handler. Our plain love.* swap in between made QM → ours → QM …
+  (a friend's game: stack overflow at main.lua:3492 'origMousePressed' on the first click). `coop_qminput.wrap`: if
+  QM's handler is in love.*, ours goes into `QM.Input.orig*` (behind it) and love.* stays QM's; otherwise a plain
+  wrap (QM 1.4). Test: tests/qmtest.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.
