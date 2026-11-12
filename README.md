@@ -21,16 +21,8 @@ gives the co-op an options page.
 Main menu → **Multiplayer**. The host clicks HOST and shares the address (for online play behind a router, a
 [playit.gg](https://playit.gg) UDP tunnel works); friends paste it and join.
 
-## How this mod was made (AI disclosure)
-The code was written by an AI: Claude (Anthropic), working through Claude Code. That covers the Lua, the patches,
-the tests and the design notes.
-
-HappiCroco directed it. They decided what the mod should be and how it should play: co-op on its own save, each
-player bringing their own soldiers, the Classic defense around a radar, the 12-soldier limit, doubled TP, and many
-smaller calls. They playtested it in the game (two copies on one PC), reported what broke or felt wrong, and asked
-for the fixes. The AI also wrote headless tests that run on every change, but those don't replace playing it.
-
-So: the ideas, the decisions and the testing are human; the typing is the AI's.
+## AI Disclosure
+The code was written by Claude, but the code was checked and tested, design choices was also made by me, overall Claude is the main contributor to the project.
 
 ## Licence
 MIT with the Commons Clause ([LICENSE](LICENSE)): use it, change it, share it, build on it, put it in your own
