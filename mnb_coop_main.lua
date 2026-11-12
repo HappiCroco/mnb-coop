@@ -29,8 +29,8 @@ mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = c
 -- Co-op Classic, defense layout (coop_defense.lua): the game's Classic set-up, wave
 -- maker and German direction helpers, each wrapped; they only differ in a defense battle.
 spawnMNB2Wave = defense.wrapWave(spawnMNB2Wave)
--- special waves (mnb2.lua:750-793): one side at a time, never doubled
-for _, name in ipairs({ "mnb2CreateFJ", "mnb2CreateSS", "mnb2CreateWerBossWave", "mnb2CreateSpecialWeaponBossWave",
+-- special waves (mnb2.lua:738-793): one side per wave, never doubled
+for _, name in ipairs({ "mnb2CreateJagers", "mnb2CreateFJ", "mnb2CreateSS", "mnb2CreateWerBossWave", "mnb2CreateSpecialWeaponBossWave",
     "mnb2CreateGoliathBossWave", "mnb2CreatePanzerBossWave", "mnb2CreateSniperBossWave", "mnb2CreateAirDropBossWave",
     "mnb2CreateVolksBossWave", "mnb2CreateGrenadierBossWave", "mnb2CreateLuftBossWave", "mnb2CreateV1BossWave",
     "mnb2CreateFeldBossWave" }) do
