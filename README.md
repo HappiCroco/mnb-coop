@@ -14,8 +14,8 @@ Needs the [QuarterMaster](https://github.com/Gamiseus/QuarterMaster) mod loader.
 - **By hand:** download `mnb_coop.zip` from [Releases](https://github.com/HappiCroco/mnb-coop/releases) and extract it
   into the game's `Mods` folder, so you get `Mods/mnb_coop/qm.toml`.
 
-Everyone playing together needs the same version. [GMenu](https://github.com/Gamiseus/MnB-Mods) is optional: it
-gives the co-op an options page.
+Everyone playing together needs the same version. The co-op's options (port, join code, updates per second...) are on
+QuarterMaster's Mod Options screen (QuarterMaster 1.8 or newer); without it the defaults are used.
 
 ## Play
 Main menu → **Multiplayer**. The host clicks HOST and shares the address (for online play behind a router, a
