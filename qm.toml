@@ -42,6 +42,12 @@ name = "includes/mods/mnb_coop/coop_battle"
 
 [[patches]]
 [patches.module]
+source = "coop_wallet.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_wallet"
+
+[[patches]]
+[patches.module]
 source = "coop_squad.lua"
 before = "main.lua"
 name = "includes/mods/mnb_coop/coop_squad"
@@ -249,6 +255,18 @@ pattern = 'if\(squadSizer\(\) > (?P<n>6)\) then'
 root_capture = "n"
 position = "at"
 payload = "(coopSizeLimit and coopSizeLimit() or 6)"
+
+# Wave timer (urb_engine.lua:6084): the next Classic wave comes when deployTimer > 60 + the
+# living Germans. The co-op defense twins every wave, so twice as many stand around; there the
+# count is halved (coopWavePace, mnb_coop_main.lua / defense.wavePace). Without the co-op: the
+# game's own totalAxis().
+[[patches]]
+[patches.regex]
+target = "includes/urb_engine.lua"
+pattern = 'if\(player\.deployTimer > 60 \+ (?P<n>totalAxis\(\))\) then'
+root_capture = "n"
+position = "at"
+payload = "(totalAxis() / (coopWavePace and coopWavePace() or 1))"
 
 # Crowd control after wave 100 (mnb2.lua:639): a (squad - 12)% chance per wave of a Combined
 # Force (tanks and troops). Counts soldiers and crewed guns/vehicles, camo nets or not. The game's

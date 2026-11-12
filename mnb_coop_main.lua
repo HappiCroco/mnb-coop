@@ -21,10 +21,16 @@ local campaign = require("includes/mods/mnb_coop/coop_campaign")
 local battle = require("includes/mods/mnb_coop/coop_battle")
 local squad = require("includes/mods/mnb_coop/coop_squad")
 local defense = require("includes/mods/mnb_coop/coop_defense")
+local wallet = require("includes/mods/mnb_coop/coop_wallet")
 local qmInput = require("includes/mods/mnb_coop/coop_qminput")
 
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
-    squad = squad, defense = defense, version = net.VERSION }
+    squad = squad, defense = defense, wallet = wallet, version = net.VERSION }
+
+-- Wave pace (qm.toml patch on the wave timer, urb_engine.lua:6084): the next wave comes at
+-- 60 + the living Germans / this. The defense twins every wave, so twice as many Germans
+-- stand around and waves (and their TP) would come slower than in the original; 1 elsewhere.
+coopWavePace = defense.wavePace
 
 -- Co-op Classic, defense layout (coop_defense.lua): the game's Classic set-up, wave
 -- maker and German direction helpers, each wrapped; they only differ in a defense battle.
@@ -67,6 +73,7 @@ end
 
 -- a client that stops watching lands back in the lobby
 battle.onStopView = function(why)
+    wallet.clientReset()
     menuPage = lobby.page
     net.status = "Back in the lobby: " .. tostring(why)
 end
@@ -74,7 +81,7 @@ end
 -- ---------------------------------------------------------------- network hooks
 -- host: friends' orders (coop_squad) and rosters (coop_campaign)
 net.onClientMessage = function(seat, msg)
-    return squad.onClientMessage(seat, msg) or campaign.onClientMessage(seat, msg)
+    return squad.onClientMessage(seat, msg) or wallet.onClientMessage(seat, msg) or campaign.onClientMessage(seat, msg)
 end
 -- client: mission results go to the co-op save, the rest is the battle view
 local battleHostMessage = net.onHostMessage
@@ -82,11 +89,13 @@ net.onHostMessage = function(msg)
     if msg.t == "results" then return campaign.queueResults(msg) end
     if msg.t == "prompt" then return squad.onPrompt(msg) end -- my armed skill/item (aiming cursor)
     if msg.t == "ui" then return squad.onUi(msg) end         -- my HUD menu page after a button
+    if msg.t == "wallet" then return wallet.onHostMessage(msg) end -- my own TP (Classic wallets)
     return battleHostMessage(msg)
 end
 net.onWelcome = function() campaign.sendRoster() end -- my top soldiers to the host
 net.onSeatLeft = function(seat)
     squad.forgetSeat(seat)
+    wallet.forgetSeat(seat)
     campaign.onSeatLeft(seat)
 end
 local battleReset = net.onReset
@@ -203,6 +212,7 @@ function love.update(dt, ...)
         -- watching: the host runs the battle, this machine only animates the mirror
         local ok, err = pcall(battle.clientUpdate, dt)
         if not ok then print("[mnb_coop] watching: " .. tostring(err)) end
+        pcall(wallet.clientApply) -- my own TP in the mirror, not the host's
         if not battle.inDebrief() then
             pcall(squad.clientHud)   -- the game's HUD buttons, from this window's camera and menu page
         end
@@ -219,6 +229,8 @@ function love.update(dt, ...)
     end
     local okd, errd = pcall(defense.update) -- co-op defense: sides, and the radar
     if not okd then print("[mnb_coop] defense: " .. tostring(errd)) end
+    local okw2, errw2 = pcall(wallet.hostUpdate) -- (first frame of a battle: the wallets start here)
+    if not okw2 then print("[mnb_coop] wallets: " .. tostring(errw2)) end
     local result = coopUpdate(dt, ...)
     if campaign.active then
         local okl, errl = pcall(campaign.updateLeavers) -- a leaver's soldiers walk off; newcomers come in
@@ -318,14 +330,20 @@ function coopSizeLimit()
     return coopSquadMax and coopSquadMax() or 6
 end
 
--- TP income in co-op Classic (solo defense too): double (owner, 2026-11-11). The pool and its
--- cap (20 + ribbons, giveTp at mnb2.lua:894) stay shared, so it fills faster but doesn't
--- grow. giveTp is the game's one income path (kills, waves, loot, special waves); only
--- the sitrep bonus (ai.lua:6157) adds TP without it.
+-- TP income in co-op Classic. With friends connected, every player has their own wallet and
+-- giveTp's full amount goes into each one (coop_wallet.lua), not doubled. Alone (a solo
+-- defense) it is the old rule: one pool, double (owner, 2026-11-11). The cap (20 + ribbons,
+-- giveTp at mnb2.lua:894) is not raised. giveTp is the game's one income path (waves, taunts,
+-- loot, special waves); the sitrep bonus (ai.lua:6157), directive TP Surge and withdrawal
+-- refunds add to player.tp directly: whichever wallet sits in it then (see coop_wallet.lua).
 local coopGiveTp = giveTp
 function giveTp(nbr, ...)
-    if type(nbr) == "number" and coopClassicRules() then
-        nbr = nbr * 2
+    if type(nbr) == "number" then
+        if wallet.active() then
+            return wallet.giveTp(coopGiveTp, nbr, ...)
+        elseif coopClassicRules() then
+            nbr = nbr * 2
+        end
     end
     return coopGiveTp(nbr, ...)
 end
@@ -359,6 +377,8 @@ local VIEW_KEYS = { f9 = true, tab = true, f3 = true, f4 = true }
 local function onKeypressed(key, ...)
     if lobby.wantsKeyboard() then return lobby.keypressed(key) end
     if hud.keypressed(key) then return end
+    -- G: give TP to the next player (Classic wallets, coop_wallet.lua)
+    if key == wallet.GIVE_KEY and wallet.keypressed(key) then return end
     if battle.viewing then
         -- friend in the host's battle: own selection keys, own view keys, Esc twice to leave
         local ok, used = pcall(squad.clientKeypressed, key)

@@ -47,6 +47,14 @@ function defense.active()
     return defense.on and type(player) == "table" and player.gameType == 1 and player.gameState == 0
 end
 
+-- Divisor for the living Germans in the wave timer (qm.toml patch, urb_engine.lua:6084: the
+-- next wave comes when deployTimer > 60 + totalAxis()). The defense twins every normal wave,
+-- so twice as many Germans are alive and waves would come slower than in the original: 2
+-- here, 1 in any other battle.
+function defense.wavePace()
+    return defense.active() and 2 or 1
+end
+
 -- The radar uses its own placeable names (pictures borrowed from the game's radar,
 -- main.lua:1495-1497) so the game's radar rules (alliedEw, wave-end reveal,
 -- capture, destruction) don't apply to the objective. Every machine needs the
