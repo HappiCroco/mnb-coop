@@ -1,12 +1,20 @@
 {
+  "schema_version": 1,
   "id": "mnb_coop",
   "name": "Mud and Blood Co-op",
   "version": "0.9.3",
-  "description": "Co-op for up to 3 players: Multiplayer lobby, co-op campaign with your own roster of 6 (bring your best, the rest train at home), the host's battle live on every screen, and your own soldiers to command.",
-  "enabled": true,
+  "description": "Co-op for up to 3 players: Multiplayer lobby, co-op campaign with your own roster of 6 (bring your best, the rest train at home), co-op Classic defense around a radar, the host's battle live on every screen, and your own soldiers to command.",
+  "category": "Gameplay",
+  "tags": ["multiplayer", "co-op", "campaign", "classic"],
   "authors": [
     "HappiCroco"
   ],
+  "homepage": "https://github.com/HappiCroco/mnb-coop",
+  "update_keys": ["GitHub:HappiCroco/mnb-coop#mnb_coop.zip"],
+  "relationships": {
+    "suggests": { "gmenu": ">=0.0.0" }
+  },
+  "enabled": true,
   "load_priority": 80,
   "entry_patch": "qm.toml"
 }

@@ -3,6 +3,13 @@
 version = "0.9.3"
 priority = 80
 
+# For QuarterMaster's mod list (Mods > Browse); the game ignores it.
+[publish]
+repository = "HappiCroco/mnb-coop"
+asset = "mnb_coop.zip"
+summary = "Co-op for up to 3 players: shared campaign with your own rosters, and a Classic defense around a radar."
+channel = "stable"
+
 [[patches]]
 [patches.module]
 source = "coop_codec.lua"
