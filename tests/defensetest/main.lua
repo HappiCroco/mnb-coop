@@ -373,16 +373,25 @@ local function veh(tag, x, targetx)
 end
 local vlo, vhi = defense.frontLines()
 local vWave = defense.wrapWave(function()
-  table.insert(V, veh("panzer4", 13000, 6400))   -- drives at the front
+  local pz = veh("panzer4", 13000, 6400)        -- drives at the front
+  pz.id, pz.trackSoundStarted = 9001, 1
+  table.insert(V, pz)
   table.insert(V, veh("sdkfz", 13000, 6400))
   table.insert(V, veh("pak38", 7700))           -- a gun put down past the front (targetx = x)
   table.insert(V, veh("goliath", 12000, 6400))   -- stays right
 end)
 local nv = #V
+-- the game's per-vehicle sounds (globals named by id): a twin must get its own
+local cloned = 0
+local fakeSound = { clone = function() cloned = cloned + 1 return { fake = true } end }
+_G.medTankIdle9001, _G.panzerTrackSound9001, _G.tankTurretMove9001 = fakeSound, fakeSound, fakeSound
 vWave()
 -- the four the game made stay right; the panzer, the halftrack and the gun get twins (nv+5..nv+7)
 local a, gun, gol, b = V[nv + 1], V[nv + 3], V[nv + 4], V[nv + 5]
 check(#V == nv + 7, "three twins added (the Goliath has none): " .. (#V - nv) .. " vehicles")
+check(cloned == 3 and rawget(_G, "medTankIdle" .. V[nv + 5].id) and rawget(_G, "panzerTrackSound" .. V[nv + 5].id)
+  and rawget(_G, "tankTurretMove" .. V[nv + 5].id) and V[nv + 5].trackSoundStarted == 0,
+  "a twin gets its own engine sounds (the game crashed without them)")
 check(a.coopSide == "R" and V[nv + 2].coopSide == "R" and gun.coopSide == "R", "the game's vehicles stay right")
 check(b.coopSide == "L" and b.tag == "panzer4" and V[nv + 6].tag == "sdkfz" and V[nv + 7].tag == "pak38"
   and V[nv + 7].coopSide == "L", "each gets a twin on the left")
