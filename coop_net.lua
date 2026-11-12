@@ -17,6 +17,12 @@ local net = {}
 
 net.VERSION = "0.9.7" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
+-- enet peer timeout (ms): give up on a peer after `min` once its unanswered packets have
+-- been resent the limit, and after `max` in any case. Was 3000/8000 (a crashed game noticed
+-- fast), but a slow college line or a VPN stalls for longer and the friend was dropped
+-- after a few seconds of play (owner, 2026-11-12). 8 s / 20 s rides that out; a crash is
+-- still noticed within ~20 s instead of enet's 30.
+net.TIMEOUT = { 8000, 20000 }
 net.MAX_SEATS = 3     -- up to 3 players for now (owner, 2026-11-11); 4 players with 3 soldiers each comes later
 net.SEAT_COLORS = { { 101, 24, 24 }, { 40, 90, 160 }, { 70, 130, 50 }, { 190, 140, 30 } }
 
@@ -569,7 +575,7 @@ function net.join(text)
         return false
     end
     server = peer
-    pcall(peer.timeout, peer, 32, 3000, 8000) -- same for a host that vanished
+    pcall(peer.timeout, peer, 32, net.TIMEOUT[1], net.TIMEOUT[2]) -- same for a host that vanished
     net.role = "connecting"
     net.status = "Connecting to " .. addr .. ":" .. port .. "..."
     net.connectStarted = love.timer.getTime()
@@ -637,8 +643,9 @@ function net.update()
             elseif net.role == "host" then
                 local now = love.timer.getTime()
                 guard[ev.peer] = { joinedAt = now, strikes = 0, msgs = 0, bytes = 0, window = now }
-                -- notice a player whose game closed or crashed after ~8 s instead of enet's ~30 s
-                pcall(ev.peer.timeout, ev.peer, 32, 3000, 8000)
+                -- notice a player whose game closed or crashed sooner than enet's ~30 s,
+                -- but ride out a bad patch on a slow or lossy line (net.TIMEOUT)
+                pcall(ev.peer.timeout, ev.peer, 32, net.TIMEOUT[1], net.TIMEOUT[2])
             end
         elseif ev.type == "receive" then
             countIn()
