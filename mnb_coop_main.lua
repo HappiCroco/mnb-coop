@@ -98,10 +98,15 @@ function mnbCoop.drawMenu()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- two copies on one PC: the windows share the screen (coop_window.lua)
+local window = require("includes/mods/mnb_coop/coop_window")
+
 -- ---------------------------------------------------------------- love hooks
 local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
+    local okw, errw = pcall(window.update)
+    if not okw then print("[mnb_coop] window: " .. tostring(errw)) end
     if battle.viewing then
         pcall(defense.aliasSprites) -- the defense radar's pictures
         -- watching: the host runs the battle, this machine only animates the mirror

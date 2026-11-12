@@ -15,7 +15,7 @@ local profile = require("includes/mods/mnb_coop/coop_profile")
 
 local net = {}
 
-net.VERSION = "0.9.1" -- co-op protocol; must match on both sides
+net.VERSION = "0.9.2" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
 net.MAX_SEATS = 3     -- up to 3 players for now (owner, 2026-11-11); 4 players with 3 soldiers each comes later
 net.SEAT_COLORS = { { 101, 24, 24 }, { 40, 90, 160 }, { 70, 130, 50 }, { 190, 140, 30 } }
@@ -298,6 +298,7 @@ local function hostReceive(peer, msg)
             peer:disconnect_later()
             return
         end
+        if msg.samePC == true then net.friendOnSamePC = true end -- the windows get stacked (mnb_coop_main)
         local free = freeSeat()
         if not free then
             send(peer, { t = "refuse", why = "Lobby is full" })
@@ -482,6 +483,9 @@ function net.join(text)
     end
     reset()
     myJoinCode = code
+    -- 127.0.0.1 / localhost: both game copies run on this PC (the two-window test setup).
+    -- (A host can't tell this from its side: behind playit.gg every friend comes from 127.0.0.1.)
+    net.samePC = addr == "127.0.0.1" or addr:lower() == "localhost"
     if not loadEnet() then return false end
     local ok, h = pcall(enet.host_create, nil, 1, 2)
     if not ok or not h then
@@ -557,7 +561,8 @@ function net.update()
         if not ev then break end
         if ev.type == "connect" then
             if net.role == "connecting" and ev.peer == server then
-                send(server, { t = "hello", v = net.VERSION, game = currentVersion, card = myCard(), code = myJoinCode })
+                send(server, { t = "hello", v = net.VERSION, game = currentVersion, card = myCard(), code = myJoinCode,
+                    samePC = net.samePC or nil })
                 net.status = "Joining lobby..."
             elseif net.role == "host" then
                 local now = love.timer.getTime()

@@ -35,6 +35,13 @@ return {
             description = "Co-op Classic starts your squads in the middle around a radar and the Germans come from both sides. Off: the usual Classic, everyone on the left.",
         },
         {
+            id = "stackWindows",
+            label = "Two copies on one PC: stack the windows",
+            type = "checkbox",
+            default = true,
+            description = "When a copy joins 127.0.0.1 (both games on this PC), the host's window goes to the top of the screen and the friend's to the bottom, shrunk to fit if the screen is too small for two.",
+        },
+        {
             id = "netStats",
             label = "Show network stats",
             type = "checkbox",

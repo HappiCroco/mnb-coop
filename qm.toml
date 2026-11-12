@@ -1,6 +1,6 @@
 # Mud and Blood Co-op. Standalone; GMenu (optional) gives it an options page and a page number.
 [manifest]
-version = "0.9.1"
+version = "0.9.2"
 priority = 80
 
 [[patches]]
@@ -44,6 +44,12 @@ name = "includes/mods/mnb_coop/coop_squad"
 source = "coop_defense.lua"
 before = "main.lua"
 name = "includes/mods/mnb_coop/coop_defense"
+
+[[patches]]
+[patches.module]
+source = "coop_window.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_window"
 
 [[patches]]
 [patches.module]
