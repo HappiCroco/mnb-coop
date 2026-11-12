@@ -21,5 +21,7 @@ gives the co-op an options page.
 Main menu → **Multiplayer**. The host clicks HOST and shares the address (for online play behind a router, a
 [playit.gg](https://playit.gg) UDP tunnel works); friends paste it and join.
 
-Design notes for developers: [DESIGN.md](DESIGN.md). Headless tests: `tests/run_tests.bat` (needs LÖVE's
-`lovec.exe`; each folder in `tests/` is a small LÖVE program that loads the mod and prints passed/failed).
+## For developers
+`main` holds only what players get. Work happens on the
+[`dev` branch](https://github.com/HappiCroco/mnb-coop/tree/dev), which also has the design notes (DESIGN.md), the
+headless tests (`tests/run_tests.bat`, needs LÖVE's `lovec.exe`) and `Launch Two Games.bat` for testing on one PC.
