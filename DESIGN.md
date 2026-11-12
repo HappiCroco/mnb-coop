@@ -376,6 +376,17 @@ Accepted, low risk: a hostile host can still send huge (bounded: 64 MB, 4M items
 friends who chose to join it, and set `temp*`/`box*Timer`-style debrief globals (drawing errors are caught and
 shown; the friend's own globals come back when they leave).
 
+## Next: catch-up pause + automatic rate (agreed 2026-11-12, for 0.9.8)
+1. Friends report the last applied update number a few times a second (`ack {n}`); the host knows each friend's
+   backlog in seconds (includes the queue, unlike ping).
+2. > ~0.5 s behind: the host steps `syncRate` down 60 → 45 → 30 → 20, back up when settled (one shared stream, so
+   it follows the slowest friend).
+3. > ~2 s behind: the host pauses with the game's own pause, "Waiting for <name> to catch up...", and resumes when
+   they're current.
+4. Never stuck: after ~15 s behind, the pause lifts with a pop-up ("<name>'s connection can't keep up").
+Later, 0.10.0: battle updates that skip lost packets (unreliable, acked deltas / per-friend baselines) instead of
+reliable-in-order, which stalls everything behind one lost packet on a lossy line; per-friend rates come with it.
+
 ## Scope and phases
 1. **Lobby + connection** (built 2026-11-11, v0.2.0; headless tests pass, not yet tried in-game). Main-menu entry is
    "Multiplayer" on the bottom bar (owner's choice), placed right of whatever buttons are there: CO-OP tile, lobby page, 4 cards (avatar, name, showcase), host/join/leave, ready, handshake.
