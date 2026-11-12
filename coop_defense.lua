@@ -8,7 +8,7 @@
 --   * preMNB2Admin (mnb2.lua:2) sets the battle up; afterwards the squad, the camera
 --     and the radar are moved to the middle (afterSetup);
 --   * spawnMNB2Wave (mnb2.lua:408) makes each wave to the right of the players;
---     every other German of it is mirrored to the left flank (wrapWave);
+--     every German of it gets a mirrored twin on the left flank (wrapWave);
 --   * the Classic German AI (axisAI2's Classic branch, urb_engine.lua:17793) only
 --     uses moveForward / axisAdvance / axisInFront / axisRetreat for direction
 --     (urb_engine.lua:19049-19314). For Germans of the left side ("L") these run
@@ -17,7 +17,7 @@
 --   * the game counts a miss when a German passes x < 300 (urb_engine.lua:6569);
 --     here a miss is a German near the radar (RADIUS) or through its line to the
 --     other side, and he is sent back to his own side.
--- Vehicles take turns left and right too (see "German vehicles from both sides": their
+-- Vehicles get left twins too (see "German vehicles from both sides": their
 -- driving rules are patched, their AI runs mirrored); infantry, paratroopers and the
 -- rest come from both sides.
 -- Active only for a Classic battle started from the CO-OP CLASSIC tile.
@@ -223,11 +223,12 @@ function defense.resume()
 end
 
 -- ---------------------------------------------------------------- waves
--- With friends (owner, 2026-11-11: more defenders, so double the attack): every German
--- infantryman a wave brings stays where the game put him (right) and gets a twin on the
--- left, mirrored: as far left of the westmost player as the game put him right of the
--- eastmost one. Each side faces the game's full wave. Solo: the wave is split instead,
--- every other German to the left. Vehicles aren't doubled: they take turns (sortVehicles).
+-- Each side faces the game's full wave (owner, 2026-11-11 with friends; 2026-11-12 solo too:
+-- "if the original spawns 4, co-op has 8, 4 on each side"): every German a normal wave brings
+-- stays where the game put him (right) and gets a twin on the left, mirrored: as far left of
+-- the westmost player as the game put him right of the eastmost one. Its vehicles too (each
+-- gets a mirrored twin, twinVehicles). Special waves are not twinned: whole, one side
+-- (wrapSpecial). Double the Germans, so double TP and a 12-soldier squad (mnb_coop_main).
 
 -- a copy of a soldier for his twin: his own tables (weapon, perks, buffs...) copied a few
 -- levels deep, anything deeper shared (never a reference back into `player`)
@@ -256,11 +257,10 @@ function defense.wrapWave(orig)
         defense.inWave, defense.waveSpecialSide = false, nil
         if not r[1] then error(r[2], 0) end
         table.remove(r, 1)
-        -- the wave's vehicles take turns left and right (special waves' are sorted already)
-        defense.sortVehicles(nv0)
+        -- the wave's vehicles: each gets a twin on the left (special waves' are sorted already)
+        defense.twinVehicles(nv0)
         local n1 = #troops
         local lo, hi = alliedSpan()
-        local twins = net.playerCount() > 1
         -- the game puts a wave 750+ past the frontmost friendly soldier, who may be at or
         -- even left of the radar: keep both sides' spawns out of the radar's clear zone
         local eastMin = defense.radarX + defense.SPAWN_CLEAR
@@ -271,16 +271,11 @@ function defense.wrapWave(orig)
                 if t.x < eastMin then defense.placeAt(t, eastMin + randNbr(200)) end
                 local leftX = math.min(westMax - randNbr(200),
                     math.max(defense.LEFT_EDGE + 200, math.floor(lo - (t.x - hi))))
-                if twins then
-                    t.coopSide = "R"
-                    local twin = copySoldier(t, 1)
-                    twin.id = newId()
-                    sendLeft(twin, leftX)
-                    troops[#troops + 1] = twin
-                else
-                    defense.flip = defense.flip + 1
-                    if defense.flip % 2 == 0 then sendLeft(t, leftX) else t.coopSide = "R" end
-                end
+                t.coopSide = "R"
+                local twin = copySoldier(t, 1)
+                twin.id = newId()
+                sendLeft(twin, leftX)
+                troops[#troops + 1] = twin
             end
         end
         return unpack(r)
@@ -362,8 +357,8 @@ local function nextGoesLeft()
     return defense.strikeFlip % 2 == 0
 end
 
--- German paratroopers (fjDrop(x, y), x = front + 0/600/1000, urb_engine.lua:16046): with
--- friends they drop on both sides, like the waves; solo, every other drop goes left.
+-- German paratroopers (fjDrop(x, y), x = front + 0/600/1000, urb_engine.lua:16046): they drop
+-- on both sides, like the waves; a special wave's drop only on its side.
 function defense.wrapFjDrop(orig)
     return function(x, y, ...)
         if not defense.active() or type(x) ~= "number" then return orig(x, y, ...) end
@@ -374,17 +369,16 @@ function defense.wrapFjDrop(orig)
         if defense.specialSide then -- part of a special wave: its one side only
             return orig(defense.specialSide == "L" and west or east, y, ...)
         end
-        if net.playerCount() > 1 then
-            orig(east, y, ...)
-            return orig(west, y, ...)
-        end
-        return orig(nextGoesLeft() and west or east, y, ...)
+        -- like the waves: the game's full drop on each side (solo too, owner 2026-11-12)
+        orig(east, y, ...)
+        return orig(west, y, ...)
     end
 end
 
 -- ---------------------------------------------------------------- German vehicles from both sides
--- Owner, 2026-11-12: "make the vehicles alternate left and right". A wave's vehicles take
--- turns (a special wave's all go to its side); a left one is mirrored around our soldiers
+-- Owner, 2026-11-12: "make the vehicles alternate left and right", then "vehicles being half is
+-- weird": a normal wave's vehicles each get a mirrored twin on the left (twinVehicles), a
+-- special wave's all go to its side (sortVehicles); a left one is mirrored around our soldiers
 -- (x -> lo + hi - x), facing right (an angle a -> 2pi - a: 90 = facing left, 270 = right).
 -- The game's vehicle rules that assume "the enemy is to the left":
 --   * driving: vehicleUpdate (ai.lua:3403-3535) backs a German vehicle up, facing left, when
@@ -437,7 +431,7 @@ function defense.sendVehicleLeft(v)
     v.turretTargetAngle = mirrorAngle(v.turretTargetAngle)
 end
 
--- sides for the vehicles made since index n0: `side` for a special wave's, else by turns
+-- sides for a special wave's vehicles made since index n0: all to `side` (no side: by turns)
 function defense.sortVehicles(n0, side)
     local vs = player.deployedVehicles or {}
     for i = n0 + 1, #vs do
@@ -453,6 +447,27 @@ function defense.sortVehicles(n0, side)
                 goLeft = defense.vehicleFlip % 2 == 0
             end
             if goLeft then defense.sendVehicleLeft(v) else v.coopSide = "R" end
+        end
+    end
+end
+
+-- A normal wave's vehicles since index n0: each stays right and gets a mirrored twin on the
+-- left (its own tables: buff, passenger counts...). Those that can't go left (Goliaths,
+-- artillery, side carts) stay single, on the right.
+function defense.twinVehicles(n0)
+    local vs = player.deployedVehicles or {}
+    local n1 = #vs
+    for i = n0 + 1, n1 do
+        local v = vs[i]
+        if isGermanVehicle(v) and v.coopSide == nil then
+            v.coopSide = "R"
+            if defense.canGoLeft(v) then
+                local twin = copySoldier(v, 1)
+                twin.id = newId()
+                twin.coopSide = nil
+                defense.sendVehicleLeft(twin)
+                vs[#vs + 1] = twin
+            end
         end
     end
 end

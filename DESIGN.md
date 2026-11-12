@@ -305,6 +305,11 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - (v0.9.9) Falling back in the defense goes to the radar (owner: "they should retreat to the radio"): alliedRetreat
   (x − 100..600) is wrapped and the panic run (ai.lua:5723, x − 1280) patched to call `defense.panicked`; both pick a
   spot ~75 px from the radar on the soldier's own side. Tactical withdrawals still leave.
+- (v0.9.10) Each side faces the game's full normal wave, solo too (owner: "if the original spawns 4, co-op has 8,
+  4 on each side"): every German of a normal wave is twinned to the left (no more solo split), its vehicles too
+  (`twinVehicles`: a deep copy with a new id, sent left; Goliaths/artillery/carts stay single on the right), and a
+  normal paradrop lands on both fronts. Special waves stay whole on one side. Per side this is the original Classic:
+  6 of the 12 soldiers and half of the doubled TP against one full wave.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.

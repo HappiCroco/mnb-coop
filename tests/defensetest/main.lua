@@ -79,7 +79,8 @@ check(not defense.on, "trench mode isn't laid out as a defense")
 player.mnb2SubGame = 0
 defense.afterSetup()
 
--- a wave: the game makes four Germans right of the players; two go left
+-- a wave: the game makes four Germans right of the players; each gets a twin on the left
+-- (solo too: "if the original spawns 4, co-op has 8, 4 on each side")
 local lo, hi = 6300 - 90, 6300 + 90
 local wave = defense.wrapWave(function()
   for k = 1, 4 do table.insert(player.deployedTroops, troop("axis", hi + 750, 100 + k * 100)) end
@@ -96,8 +97,8 @@ for i = n0 + 1, #T do
     check(T[i].x >= 6300 + defense.SPAWN_CLEAR and T[i].targetx == T[i].x, "right German pushed out of the clear zone (game put him at " .. (hi + 750) .. ", now " .. T[i].x .. ")")
   end
 end
-check(left == 2 and right == 2, "solo: the wave split in two")
-local gL, gR = T[n0 + 2], T[n0 + 1]
+check(left == 4 and right == 4, "solo: the full wave on each side (" .. left .. " left, " .. right .. " right)")
+local gL, gR = T[n0 + 5], T[n0 + 1]
 
 -- with friends: every German gets a twin on the left (double the attack)
 local net = require("includes/mods/mnb_coop/coop_net")
@@ -232,8 +233,8 @@ check(defense.mirrorX(hi2 + 1000) == lo2 - 1000, "1000 past the east front mirro
 local drops = {}
 local fj = defense.wrapFjDrop(function(x, y) drops[#drops + 1] = x end)
 local dropEdge = 6300 + defense.SPAWN_CLEAR + 500
-fj(hi2 + 3000, 360) fj(hi2 + 3000, 360)
-check(drops[1] == hi2 + 3000 and drops[2] == lo2 - 3000, "solo: paratroopers alternate fronts")
+fj(hi2 + 3000, 360)
+check(#drops == 2 and drops[1] == hi2 + 3000 and drops[2] == lo2 - 3000, "solo: a drop on each front, like the waves")
 net.seats = { { name = "Host" }, { name = "Ann" } }
 drops = {}
 fj(hi2 + 3000, 360)
@@ -341,12 +342,13 @@ defense.afterSetup(false)
 defense.update()
 check(fighting.x == 6600, "loading a battle under way: Germans already fighting keep their place")
 
--- German vehicles from both sides (owner: "make the vehicles alternate left and right")
+-- German vehicles from both sides (owner: "make the vehicles alternate left and right"; then
+-- "vehicles being half is weird": a normal wave's vehicles get a twin on the left, like its men)
 local V = player.deployedVehicles
 local function veh(tag, x, targetx)
   return { faction = "axis", tag = tag, x = x, y = 300, targetx = targetx or x, targety = 300,
     rotation = math.rad(90), intendedRotation = math.rad(90), turretCurrentAngle = math.rad(90),
-    turretTargetAngle = math.rad(90), sideRoller = 0 }
+    turretTargetAngle = math.rad(90), sideRoller = 0, buff = { { tag = "x" } }, passengers = { 1, 1 } }
 end
 local vlo, vhi = defense.frontLines()
 local vWave = defense.wrapWave(function()
@@ -356,10 +358,15 @@ local vWave = defense.wrapWave(function()
   table.insert(V, veh("goliath", 12000, 6400))   -- stays right
 end)
 local nv = #V
-defense.vehicleFlip = 0
 vWave()
-local a, b, gun, gol = V[nv + 1], V[nv + 2], V[nv + 3], V[nv + 4]
-check(a.coopSide == "R" and b.coopSide == "L" and gun.coopSide == "R", "a wave's vehicles take turns right and left")
+-- the four the game made stay right; the panzer, the halftrack and the gun get twins (nv+5..nv+7)
+local a, gun, gol, b = V[nv + 1], V[nv + 3], V[nv + 4], V[nv + 5]
+check(#V == nv + 7, "three twins added (the Goliath has none): " .. (#V - nv) .. " vehicles")
+check(a.coopSide == "R" and V[nv + 2].coopSide == "R" and gun.coopSide == "R", "the game's vehicles stay right")
+check(b.coopSide == "L" and b.tag == "panzer4" and V[nv + 6].tag == "sdkfz" and V[nv + 7].tag == "pak38"
+  and V[nv + 7].coopSide == "L", "each gets a twin on the left")
+check(b.id ~= a.id and b.buff ~= a.buff and b.passengers ~= a.passengers and #b.passengers == 2,
+  "a twin has its own id and tables")
 check(b.x < 0 and b.x >= -300, "a left vehicle starts off the map on the left (" .. b.x .. ")")
 check(math.abs(b.rotation - math.rad(270)) < 1e-6 and math.abs(b.turretTargetAngle - math.rad(270)) < 1e-6,
   "a left vehicle faces right, turret too")
