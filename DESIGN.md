@@ -310,6 +310,10 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   (`twinVehicles`: a deep copy with a new id, sent left; Goliaths/artillery/carts stay single on the right), and a
   normal paradrop lands on both fronts. Special waves stay whole on one side. Per side this is the original Classic:
   6 of the 12 soldiers and half of the doubled TP against one full wave.
+- (v0.9.10) What scales with the squad: wave sizes and special-wave sizes don't (wave number only; specials are fixed,
+  meant to overwhelm). Size control was scaled (12/24); crowd control after wave 100 (mnb2.lua:639, (realSquadSizer −
+  12)% → spawnCombinedForce) now uses coopSizeLimit × 2 (24 in co-op Classic), and its Combined Force is wrapped
+  like a special wave (whole, one side, not twinned).
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.

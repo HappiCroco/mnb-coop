@@ -33,7 +33,7 @@ spawnMNB2Wave = defense.wrapWave(spawnMNB2Wave)
 for _, name in ipairs({ "mnb2CreateJagers", "mnb2CreateFJ", "mnb2CreateSS", "mnb2CreateWerBossWave", "mnb2CreateSpecialWeaponBossWave",
     "mnb2CreateGoliathBossWave", "mnb2CreatePanzerBossWave", "mnb2CreateSniperBossWave", "mnb2CreateAirDropBossWave",
     "mnb2CreateVolksBossWave", "mnb2CreateGrenadierBossWave", "mnb2CreateLuftBossWave", "mnb2CreateV1BossWave",
-    "mnb2CreateFeldBossWave" }) do
+    "mnb2CreateFeldBossWave", "spawnCombinedForce" }) do -- (crowd control's Combined Force too, mnb2.lua:643)
     if type(rawget(_G, name)) == "function" then _G[name] = defense.wrapSpecial(_G[name]) end
 end
 moveForward = defense.wrapMoveForward(moveForward)

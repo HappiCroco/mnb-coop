@@ -250,6 +250,18 @@ root_capture = "n"
 position = "at"
 payload = "(coopSizeLimit and coopSizeLimit() or 6)"
 
+# Crowd control after wave 100 (mnb2.lua:639): a (squad - 12)% chance per wave of a Combined
+# Force (tanks and troops). Counts soldiers and crewed guns/vehicles, camo nets or not. The game's
+# 12 is twice one player's 6; co-op Classic: twice its 12 (owner, 2026-11-12: "if they scale with
+# the number of soldiers... the doubling explodes the numbers").
+[[patches]]
+[patches.regex]
+target = "includes/mnb2.lua"
+pattern = 'randNbr\(100\) < \(realSquadSizer\(\) -(?P<n>12)\)'
+root_capture = "n"
+position = "at"
+payload = "(coopSizeLimit and coopSizeLimit() * 2 or 12)"
+
 # ...and it gets ten times as likely above twice that (the game's 12; co-op: 24).
 [[patches]]
 [patches.regex]
