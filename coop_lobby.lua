@@ -172,6 +172,7 @@ local function sideTiles()
     local readyTile = { "coopReady", ready and "UNREADY" or "READY",
         ready and "Take back your ready" or "Tell the others you are ready", true }
     if net.role == "host" then
+        readyTile[3] = readyTile[3] .. "\nBattles start once every friend has pressed READY"
         return readyTile, { "coopLeave", "CLOSE", "Close the lobby; everyone is disconnected", true }
     end
     return readyTile, { "coopLeave", "LEAVE", "Leave this lobby", true }
@@ -488,6 +489,7 @@ function coopClassicButton()
         if mnbCoop and mnbCoop.notice then mnbCoop.notice("Only the host starts battles") end
         return
     end
+    if not net.readyToStart() then return end -- every friend's READY first (it names who's missing)
     if campaign.active then pcall(campaign.exit) end -- Classic has its own save
     click()
     mouseOverText = ""
