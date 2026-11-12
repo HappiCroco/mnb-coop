@@ -17,8 +17,9 @@
 --   * the game counts a miss when a German passes x < 300 (urb_engine.lua:6569);
 --     here a miss is a German near the radar (RADIUS) or through its line to the
 --     other side, and he is sent back to his own side.
--- Vehicles all keep coming from the right (their AI has hard left-facing rules,
--- ai.lua:3403); infantry, paratroopers and the rest come from both sides.
+-- Vehicles take turns left and right too (see "German vehicles from both sides": their
+-- driving rules are patched, their AI runs mirrored); infantry, paratroopers and the
+-- rest come from both sides.
 -- Active only for a Classic battle started from the CO-OP CLASSIC tile.
 -- =============================================================================
 local net = require("includes/mods/mnb_coop/coop_net")
@@ -226,7 +227,7 @@ end
 -- infantryman a wave brings stays where the game put him (right) and gets a twin on the
 -- left, mirrored: as far left of the westmost player as the game put him right of the
 -- eastmost one. Each side faces the game's full wave. Solo: the wave is split instead,
--- every other German to the left. Vehicles stay right (see the header).
+-- every other German to the left. Vehicles aren't doubled: they take turns (sortVehicles).
 
 -- a copy of a soldier for his twin: his own tables (weapon, perks, buffs...) copied a few
 -- levels deep, anything deeper shared (never a reference back into `player`)
@@ -248,12 +249,15 @@ function defense.wrapWave(orig)
         if not defense.active() then return orig(...) end
         local troops = player.deployedTroops
         local n0 = #troops
+        local nv0 = #(player.deployedVehicles or {})
         -- every special wave this wave rolls comes from the same side (wrapSpecial)
         defense.inWave, defense.waveSpecialSide = true, nil
         local r = { pcall(orig, ...) }
         defense.inWave, defense.waveSpecialSide = false, nil
         if not r[1] then error(r[2], 0) end
         table.remove(r, 1)
+        -- the wave's vehicles take turns left and right (special waves' are sorted already)
+        defense.sortVehicles(nv0)
         local n1 = #troops
         local lo, hi = alliedSpan()
         local twins = net.playerCount() > 1
@@ -289,7 +293,7 @@ end
 -- its own, so one wave can bring two or three: all of a wave's specials share one side, and
 -- the next wave's go to the other. They run inside spawnMNB2Wave, so their Germans get their
 -- side here, before wrapWave looks for new ones (it only takes Germans with no side yet).
--- Their vehicles stay right, like all vehicles.
+-- Their vehicles (bikes, Panzers) go to the same side; Goliaths stay right (KEEP_RIGHT).
 defense.specialFlip = 0
 defense.specialSide = nil -- set while a special wave is being made (fjDrop drops on that side only)
 defense.inWave = false    -- inside spawnMNB2Wave (wrapWave)
@@ -309,9 +313,11 @@ function defense.wrapSpecial(orig)
         local side = specialSideNow()
         local troops = player.deployedTroops
         local n0 = #troops
+        local nv0 = #(player.deployedVehicles or {})
         defense.specialSide = side
         local r = { pcall(orig, ...) }
         defense.specialSide = nil
+        defense.sortVehicles(nv0, side) -- bikes, Panzers... with the rest of the wave
         local lo, hi = alliedSpan()
         local eastMin = defense.radarX + defense.SPAWN_CLEAR
         local westMax = defense.radarX - defense.SPAWN_CLEAR
@@ -373,6 +379,143 @@ function defense.wrapFjDrop(orig)
             return orig(west, y, ...)
         end
         return orig(nextGoesLeft() and west or east, y, ...)
+    end
+end
+
+-- ---------------------------------------------------------------- German vehicles from both sides
+-- Owner, 2026-11-12: "make the vehicles alternate left and right". A wave's vehicles take
+-- turns (a special wave's all go to its side); a left one is mirrored around our soldiers
+-- (x -> lo + hi - x), facing right (an angle a -> 2pi - a: 90 = facing left, 270 = right).
+-- The game's vehicle rules that assume "the enemy is to the left":
+--   * driving: vehicleUpdate (ai.lua:3403-3535) backs a German vehicle up, facing left, when
+--     its target is to the right (a retreat). Patched (qm.toml) to ask vehicleBacks /
+--     vehicleBackSign / vehicleBackRot: for a left one, backing up is to the left, facing right;
+--   * targets: the vehicle AIs (tankAI, truckAI, bikeAI ...) aim at alliedFrontLine() (our
+--     east-most soldier) and axisFrontLine() (the west-most German anywhere). wrapVehicleAI
+--     gives each side its own German front (a right one used to drive to the LEFT side's
+--     Germans), and runs a left one's AI mirrored: its target comes back mirrored;
+--   * retreats to x 14000 (no crew, no ammo, ai.lua:4281/4455/4526) become the left edge.
+-- Firing is by angle only (coneOfVision, turretConeOfVision), so a mirrored vehicle aims
+-- and shoots as it should. Not mirrored: Goliaths (their AI blows them up "behind our
+-- lines" by x, ai.lua:8585), Wespe/Nebel/howitzer artillery, side-rolling carts.
+local KEEP_RIGHT = { goliath = true, wespe = true, nebel = true, germHowitzer = true }
+defense.vehicleFlip = 0
+defense.LEFT_EXIT = -700 -- a left vehicle leaving: off the map (vehicleCleanup removes x < -500)
+
+local function isGermanVehicle(v)
+    return type(v) == "table" and v.faction == "axis" and type(v.x) == "number"
+end
+
+local function mirrorAngle(a)
+    if type(a) ~= "number" then return a end
+    return (2 * math.pi - a) % (2 * math.pi)
+end
+
+-- a right-side target mapped to the left: the same distance past our west-most soldier
+-- as it was past the east-most one; far-right retreats become the left edge
+function defense.mirrorTarget(x)
+    if type(x) ~= "number" then return x end
+    if x >= 11000 then return defense.LEFT_EXIT end
+    local lo, hi = alliedSpan()
+    return math.max(defense.LEFT_EXIT, math.floor(lo + hi - x))
+end
+
+function defense.canGoLeft(v)
+    return isGermanVehicle(v) and (v.sideRoller or 0) <= 0 and not KEEP_RIGHT[v.tag]
+end
+
+-- mirror a vehicle the game just put on the right over to the left
+function defense.sendVehicleLeft(v)
+    local lo, hi = alliedSpan()
+    local oldX = v.x
+    v.coopSide = "L"
+    v.x = math.min(defense.radarX - defense.SPAWN_CLEAR, math.max(-300, math.floor(lo + hi - v.x)))
+    if v.targetx == oldX then v.targetx = v.x else v.targetx = defense.mirrorTarget(v.targetx) end
+    v.rotation = mirrorAngle(v.rotation)
+    v.intendedRotation = mirrorAngle(v.intendedRotation)
+    v.turretCurrentAngle = mirrorAngle(v.turretCurrentAngle)
+    v.turretTargetAngle = mirrorAngle(v.turretTargetAngle)
+end
+
+-- sides for the vehicles made since index n0: `side` for a special wave's, else by turns
+function defense.sortVehicles(n0, side)
+    local vs = player.deployedVehicles or {}
+    for i = n0 + 1, #vs do
+        local v = vs[i]
+        if isGermanVehicle(v) and v.coopSide == nil then
+            local goLeft
+            if not defense.canGoLeft(v) then
+                goLeft = false
+            elseif side then
+                goLeft = side == "L"
+            else
+                defense.vehicleFlip = defense.vehicleFlip + 1
+                goLeft = defense.vehicleFlip % 2 == 0
+            end
+            if goLeft then defense.sendVehicleLeft(v) else v.coopSide = "R" end
+        end
+    end
+end
+
+-- the patched driving rules (qm.toml, ai.lua vehicleUpdate). Called for German vehicles
+-- only (the game's own faction test stays in front of them).
+local function leftVehicle(v) return defense.active() and v.coopSide == "L" end
+function defense.vehicleBacks(v)
+    if leftVehicle(v) then return v.targetx < v.x end
+    return v.targetx > v.x
+end
+function defense.vehicleBackSign(v) return leftVehicle(v) and -1 or 1 end
+function defense.vehicleBackRot(v) return leftVehicle(v) and math.rad(270) or math.rad(90) end
+
+-- the German front for one side: the right's west-most German (east of the radar), or the
+-- left's east-most one; nil when that side has none (the game then uses endLine + 200)
+function defense.sideFront(side)
+    local best
+    for _, t in ipairs(player.deployedTroops or {}) do
+        if isGerman(t) and (t.health or 0) > 0 then
+            local left = t.coopSide == "L" or (t.coopSide == nil and t.x < defense.radarX)
+            if side == "L" and left then best = math.max(best or t.x, t.x)
+            elseif side ~= "L" and not left then best = math.min(best or t.x, t.x) end
+        end
+    end
+    return best
+end
+
+-- the game's vehicle AIs (one vehicle per call, ai.lua:4943-5375, 8553): each side's own
+-- German front; a left vehicle's AI runs in the mirror (axisFrontLine mirrored, its new
+-- target mirrored back). alliedFrontLine stays: the mirror of our west-most soldier is
+-- our east-most one.
+function defense.wrapVehicleAI(orig)
+    return function(v, ...)
+        if not defense.active() or not isGermanVehicle(v) then return orig(v, ...) end
+        local side = v.coopSide == "L" and "L" or "R"
+        local gameFront = axisFrontLine
+        local front = defense.sideFront(side)
+        if side == "L" and front then
+            local lo, hi = alliedSpan()
+            front = lo + hi - front
+        end
+        local endFront = (tonumber(player.endLine) or 12600) + 200
+        axisFrontLine = function() return front or endFront end
+        local before = v.targetx
+        local r = { pcall(orig, v, ...) }
+        axisFrontLine = gameFront
+        if side == "L" and v.targetx ~= before then v.targetx = defense.mirrorTarget(v.targetx) end
+        if not r[1] then error(r[2], 0) end
+        return unpack(r, 2)
+    end
+end
+
+-- every frame: a vehicle with no side gets one by where it is; a left one's far-right
+-- retreats (set outside the AIs, ai.lua:3305/4281/4455/4526) go to the left edge instead
+function defense.updateVehicles()
+    for _, v in ipairs(player.deployedVehicles or {}) do
+        if isGermanVehicle(v) then
+            if v.coopSide == nil then v.coopSide = v.x < defense.radarX and "L" or "R" end
+            if v.coopSide == "L" and type(v.targetx) == "number" and v.targetx >= 11000 then
+                v.targetx = defense.LEFT_EXIT
+            end
+        end
     end
 end
 
@@ -537,6 +680,7 @@ function defense.update()
     if not defense.active() then return end
     newArrivals()
     withdrawn()
+    defense.updateVehicles()
     local rx, ry, r2 = defense.radarX, defense.radarY, defense.RADIUS * defense.RADIUS
     for _, t in ipairs(player.deployedTroops or {}) do
         if isGerman(t) then

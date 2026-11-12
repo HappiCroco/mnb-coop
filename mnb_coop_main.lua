@@ -40,6 +40,14 @@ moveForward = defense.wrapMoveForward(moveForward)
 axisRetreat = defense.wrapRetreat(axisRetreat)
 axisInFront = defense.wrapInFront(axisInFront)
 axisAdvance = defense.wrapAdvance(axisAdvance)
+-- German vehicles from both sides: each side's own German front, a left one's AI mirrored
+-- (the vehicle AIs vehicleUpdate calls one vehicle at a time, ai.lua:4150-4182)
+for _, name in ipairs({ "tankAI", "truckAI", "benzAI", "pumaAI", "bikeAI", "sdkfz2AI", "horseCartAI",
+    "pak36AI", "stationaryAI" }) do
+    if type(rawget(_G, name)) == "function" then _G[name] = defense.wrapVehicleAI(_G[name]) end
+end
+-- ...and their driving rules (qm.toml patches in vehicleUpdate ask these)
+coopVehicleBacks, coopVehicleBackSign, coopVehicleBackRot = defense.vehicleBacks, defense.vehicleBackSign, defense.vehicleBackRot
 fjDrop = defense.wrapFjDrop(fjDrop)                         -- German paratroopers: both fronts
 germanArtyPrefire = defense.wrapFrontStrike(germanArtyPrefire) -- front-line artillery: alternate fronts
 preAirBurst = defense.wrapFrontStrike(preAirBurst)

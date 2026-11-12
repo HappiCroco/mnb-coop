@@ -275,6 +275,19 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   only). The chosen value is `QM.settings.mnb_coop[id]` (saveModSettings.lua). net.option and modLibrary.option read
   it first, then GMenu.savedSettings, then the default; the lobby's pages and Options button use QM.Menu, else
   GMenu. mod.json no longer suggests gmenu.
+- (v0.9.8) Defense balance (owner: special waves "are very strong"): Jägers (mnb2CreateJagers, spawned behind the
+  front = west of the radar) were not wrapped and got twinned onto both sides; now a one-side special. Several specials
+  rolled in one wave share one side (`waveSpecialSide`), the next wave's go to the other.
+- (v0.9.8) German vehicles from both sides (owner: "make the vehicles alternate left and right"): a wave's vehicles
+  take turns, a special wave's go to its side (`sortVehicles`); a left one is mirrored around our soldiers (x → lo+hi−x,
+  angles a → 2π−a, off-map spawns at ≥ −300 since vehicleCleanup drops x < −500). Firing is angle-only
+  (coneOfVision/turretConeOfVision), drawing follows rotation, so only driving and targets needed work:
+  three qm.toml regexes in vehicleUpdate (5 "targetx > x and axis" backing tests → `coopVehicleBacks`, 4 backing moves
+  → `coopVehicleBackSign`, the backing facing → `coopVehicleBackRot`); `wrapVehicleAI` around tankAI, truckAI, benzAI,
+  pumaAI, bikeAI, sdkfz2AI, horseCartAI, pak36AI, stationaryAI gives each side its own German front (a right vehicle
+  used to aim at the west-most German anywhere, i.e. the left side's) and mirrors a left vehicle's new target;
+  far-right retreats (≥ 11000, set outside the AIs too) become x −700. Kept right: Goliaths (tankAI blows them up
+  "behind our lines" by x), Wespe/Nebel/howitzer, side-rolling carts. Tests: defensetest.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.

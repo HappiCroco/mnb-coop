@@ -340,6 +340,73 @@ table.insert(T, fighting)
 defense.afterSetup(false)
 defense.update()
 check(fighting.x == 6600, "loading a battle under way: Germans already fighting keep their place")
+
+-- German vehicles from both sides (owner: "make the vehicles alternate left and right")
+local V = player.deployedVehicles
+local function veh(tag, x, targetx)
+  return { faction = "axis", tag = tag, x = x, y = 300, targetx = targetx or x, targety = 300,
+    rotation = math.rad(90), intendedRotation = math.rad(90), turretCurrentAngle = math.rad(90),
+    turretTargetAngle = math.rad(90), sideRoller = 0 }
+end
+local vlo, vhi = defense.frontLines()
+local vWave = defense.wrapWave(function()
+  table.insert(V, veh("panzer4", 13000, 6400))   -- drives at the front
+  table.insert(V, veh("sdkfz", 13000, 6400))
+  table.insert(V, veh("pak38", 7700))           -- a gun put down past the front (targetx = x)
+  table.insert(V, veh("goliath", 12000, 6400))   -- stays right
+end)
+local nv = #V
+defense.vehicleFlip = 0
+vWave()
+local a, b, gun, gol = V[nv + 1], V[nv + 2], V[nv + 3], V[nv + 4]
+check(a.coopSide == "R" and b.coopSide == "L" and gun.coopSide == "R", "a wave's vehicles take turns right and left")
+check(b.x < 0 and b.x >= -300, "a left vehicle starts off the map on the left (" .. b.x .. ")")
+check(math.abs(b.rotation - math.rad(270)) < 1e-6 and math.abs(b.turretTargetAngle - math.rad(270)) < 1e-6,
+  "a left vehicle faces right, turret too")
+check(b.targetx == math.floor(vlo + vhi - 6400), "its target mirrored to the west front (" .. b.targetx .. ")")
+check(a.x == 13000 and a.rotation == math.rad(90), "a right vehicle is left as the game made it")
+check(gol.coopSide == "R" and gol.x == 12000, "Goliaths stay right")
+-- a stationary gun sent left lands outside the radar's clear zone, staying put
+local gun2 = veh("pak38", 7700)
+defense.sendVehicleLeft(gun2)
+check(gun2.x <= 6300 - defense.SPAWN_CLEAR and gun2.targetx == gun2.x, "a gun sent left: past the clear zone, stays put")
+-- driving rules (the qm.toml patches in vehicleUpdate)
+b.x, b.targetx = 3000, 5500
+check(defense.vehicleBacks(b) == false, "left vehicle heading right (at us): drives normally, not backing up")
+b.targetx = 1000
+check(defense.vehicleBacks(b) and defense.vehicleBackSign(b) == -1 and math.abs(defense.vehicleBackRot(b) - math.rad(270)) < 1e-6,
+  "left vehicle retreating west: backs up to the left, facing right")
+a.x, a.targetx = 9000, 12000
+check(defense.vehicleBacks(a) and defense.vehicleBackSign(a) == 1 and defense.vehicleBackRot(a) == math.rad(90),
+  "right vehicle retreating east: the game's own rule")
+a.targetx = 7000
+check(defense.vehicleBacks(a) == false, "right vehicle heading at us: drives normally")
+-- the AIs: each side's own German front; a left vehicle's target comes back mirrored
+for i = #T, 1, -1 do if T[i].faction == "axis" then table.remove(T, i) end end
+local gR, gL = troop("axis", 7800, 300), troop("axis", 4600, 300)
+gR.coopSide, gL.coopSide = "R", "L"
+table.insert(T, gR) table.insert(T, gL)
+function axisFrontLine() return 4600 end -- the game's: the west-most German anywhere
+local seenFront
+local ai = defense.wrapVehicleAI(function(v) seenFront = axisFrontLine() v.targetx = axisFrontLine() + 200 end)
+a.x = 9500
+ai(a)
+check(seenFront == 7800 and a.targetx == 8000, "a right vehicle's German front is the right side's (it went to the left's)")
+b.x = 2500
+ai(b)
+check(b.targetx == 4600 - 200, "a left vehicle's target: just behind the left's front German (" .. b.targetx .. ")")
+check(axisFrontLine() == 4600, "the game's axisFrontLine is back afterwards")
+local ai2 = defense.wrapVehicleAI(function(v) v.targetx = 14000 end)
+ai2(b)
+check(b.targetx == defense.LEFT_EXIT, "a left vehicle's retreat to the far right becomes the left edge")
+b.targetx = 14000 -- set outside the AIs (no crew, ai.lua:4281)
+defense.update()
+check(b.targetx == defense.LEFT_EXIT, "a left vehicle's retreat set elsewhere also goes left")
+local stray = veh("puma", 3000) -- a vehicle from somewhere else: its side by where it is
+table.insert(V, stray)
+defense.update()
+check(stray.coopSide == "L", "a vehicle with no side gets one by where it is")
+for i = #V, nv + 1, -1 do table.remove(V, i) end
 player.gameState = 1
 local before = player.mnb2Miss
 local late = troop("axis", 6300, 360) late.coopSide = "R"
