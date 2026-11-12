@@ -54,6 +54,12 @@ name = "includes/mods/mnb_coop/coop_defense"
 
 [[patches]]
 [patches.module]
+source = "coop_ribbons.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_ribbons"
+
+[[patches]]
+[patches.module]
 source = "coop_window.lua"
 before = "main.lua"
 name = "includes/mods/mnb_coop/coop_window"

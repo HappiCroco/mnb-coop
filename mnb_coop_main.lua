@@ -22,9 +22,14 @@ local battle = require("includes/mods/mnb_coop/coop_battle")
 local squad = require("includes/mods/mnb_coop/coop_squad")
 local defense = require("includes/mods/mnb_coop/coop_defense")
 local qmInput = require("includes/mods/mnb_coop/coop_qminput")
+local ribbons = require("includes/mods/mnb_coop/coop_ribbons")
 
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
-    squad = squad, defense = defense, version = net.VERSION }
+    squad = squad, defense = defense, ribbons = ribbons, version = net.VERSION }
+
+-- Co-op ribbons (coop_ribbons.lua, ids 201+): pictures, names and texts become game globals,
+-- and checkRibCondition hands our ids to the registry
+ribbons.install()
 
 -- Co-op Classic, defense layout (coop_defense.lua): the game's Classic set-up, wave
 -- maker and German direction helpers, each wrapped; they only differ in a defense battle.
@@ -327,7 +332,11 @@ function giveTp(nbr, ...)
     if type(nbr) == "number" and coopClassicRules() then
         nbr = nbr * 2
     end
-    return coopGiveTp(nbr, ...)
+    local before = type(player) == "table" and player.tp or nil
+    local result = coopGiveTp(nbr, ...)
+    -- Two-Front War ribbon: +2 to the cap, put back after the game's own clamp
+    pcall(ribbons.afterGiveTp, before, nbr)
+    return result
 end
 
 -- A face click on the host doesn't open a friend's soldier's promotion panel: they choose.
