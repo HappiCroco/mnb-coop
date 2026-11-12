@@ -21,6 +21,7 @@ local campaign = require("includes/mods/mnb_coop/coop_campaign")
 local battle = require("includes/mods/mnb_coop/coop_battle")
 local squad = require("includes/mods/mnb_coop/coop_squad")
 local defense = require("includes/mods/mnb_coop/coop_defense")
+local qmInput = require("includes/mods/mnb_coop/coop_qminput")
 
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
     squad = squad, defense = defense, version = net.VERSION }
@@ -321,11 +322,13 @@ function preGameAdmin(...)
     return result
 end
 
-local coopKeypressed = love.keypressed
+-- Key and mouse handlers go in through qmInput.wrap (coop_qminput.lua): QuarterMaster 1.8 has its own in
+-- front and installs them twice, and a plain love.* swap made a click loop forever (stack overflow).
+local coopKeypressed -- the handler ours passes on to (the game's)
 -- keys a friend may use while watching: they only change that machine's view
 -- (main.lua: f9 tactical view 7861, tab faces 8493, f3/f4 window 7886-7894)
 local VIEW_KEYS = { f9 = true, tab = true, f3 = true, f4 = true }
-function love.keypressed(key, ...)
+local function onKeypressed(key, ...)
     if lobby.wantsKeyboard() then return lobby.keypressed(key) end
     if hud.keypressed(key) then return end
     if battle.viewing then
@@ -348,9 +351,10 @@ function love.keypressed(key, ...)
     end
     return coopKeypressed(key, ...)
 end
+coopKeypressed = qmInput.wrap("keypressed", function() return onKeypressed end)
 
-local coopKeyreleased = love.keyreleased
-function love.keyreleased(key, ...)
+local coopKeyreleased
+local function onKeyreleased(key, ...)
     if battle.viewing then
         pcall(squad.clientKeyreleased, key)
         return
@@ -361,6 +365,7 @@ function love.keyreleased(key, ...)
     end
     return coopKeyreleased(key, ...)
 end
+coopKeyreleased = qmInput.wrap("keyreleased", function() return onKeyreleased end)
 -- friends' H and Alt release are run through the game's own key handlers
 squad.setGameKeys(coopKeypressed, coopKeyreleased)
 
@@ -405,8 +410,8 @@ function love.draw(...)
     pcall(mnbCoop.drawToasts) -- error and notice pop-ups, on top of everything
 end
 
-local coopMousepressed = love.mousepressed
-function love.mousepressed(x, y, button, ...)
+local coopMousepressed
+local function onMousepressed(x, y, button, ...)
     if battle.viewing then
         pcall(squad.clientMousepressed, x, y, button)
         return
@@ -415,6 +420,7 @@ function love.mousepressed(x, y, button, ...)
     if okd and used then return end
     if coopMousepressed then return coopMousepressed(x, y, button, ...) end
 end
+coopMousepressed = qmInput.wrap("mousepressed", function() return onMousepressed end)
 
 local coopTextinput = love.textinput
 function love.textinput(t, ...)
@@ -422,8 +428,8 @@ function love.textinput(t, ...)
     if coopTextinput then return coopTextinput(t, ...) end
 end
 
-local coopMousereleased = love.mousereleased
-function love.mousereleased(x, y, button, ...)
+local coopMousereleased
+local function onMousereleased(x, y, button, ...)
     if battle.viewing then
         local ok, err = pcall(squad.clientMousereleased, x, y, button)
         if not ok then print("[mnb_coop] order: " .. tostring(err)) end
@@ -435,6 +441,7 @@ function love.mousereleased(x, y, button, ...)
     pcall(squad.hostBeforeRelease, button) -- faces only reorder inside your own group
     return coopMousereleased(x, y, button, ...)
 end
+coopMousereleased = qmInput.wrap("mousereleased", function() return onMousereleased end)
 -- friends' move orders are replayed through the game's own release handler
 squad.setGameRelease(coopMousereleased)
 
