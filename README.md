@@ -22,8 +22,10 @@ Main menu → **Multiplayer**. The host clicks HOST and shares the address (for 
 [playit.gg](https://playit.gg) UDP tunnel works); friends paste it and join.
 
 ## Licence
-MIT ([LICENSE](LICENSE)), for this mod's own code. Mud and Blood and its files belong to their owners; nothing here
-includes or grants rights to the game.
+MIT with the Commons Clause ([LICENSE](LICENSE)): use it, change it, share it, build on it, put it in your own
+mods, all free. You can't sell it, or sell something whose value is mostly this mod. Keep the licence with copies.
+It covers this mod's own code only. Mud and Blood and its files belong to their owners; nothing here includes or
+grants rights to the game.
 
 ## For developers
 `main` holds only what players get. Work happens on the
