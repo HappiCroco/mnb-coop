@@ -12,8 +12,19 @@
 -- =============================================================================
 local codec = require("includes/mods/mnb_coop/coop_codec")
 local profile = require("includes/mods/mnb_coop/coop_profile")
+local modcheck = require("includes/mods/mnb_coop/coop_mods")
 
 local net = {}
+-- Mod differences (coop_mods.lua): host: [seat] = that friend's list of differences;
+-- friend: [1] = theirs against the host's. Swapped at hello / welcome.
+net.modDiffs = {}
+
+local function noteMods(diffs, who)
+    if #diffs == 0 or modcheck.worst(diffs) < 2 then return end
+    if mnbCoop and mnbCoop.notice then
+        mnbCoop.notice(who .. ": " .. modcheck.summary(diffs) .. " (hover the card)")
+    end
+end
 
 net.VERSION = "0.9.8" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
@@ -395,7 +406,11 @@ local function hostReceive(peer, msg)
         card.ready = false
         net.seats[free] = card
         peerSeat[peer], seatPeer[free] = free, peer
-        send(peer, { t = "welcome", seat = free })
+        -- the mod check: their list against ours (an older co-op sends none: no check)
+        local mine, theirs = modcheck.mine(), modcheck.clean(msg.mods)
+        net.modDiffs[free] = (mine and theirs) and modcheck.compare(mine, theirs, card.name) or nil
+        if net.modDiffs[free] then noteMods(net.modDiffs[free], card.name) end
+        send(peer, { t = "welcome", seat = free, mods = mine or nil })
         -- everyone's avatar to the newcomer
         for s, bytes in pairs(avatarBytes) do send(peer, { t = "avatar", seat = s, data = bytes }) end
         net.status = card.name .. " joined"
@@ -444,6 +459,7 @@ function hostDisconnect(peer)
     if not seat then return end
     local name = net.seats[seat] and net.seats[seat].name or "A player"
     net.seats[seat], peerSeat[peer], seatPeer[seat], avatarBytes[seat] = nil, nil, nil, nil
+    net.modDiffs[seat] = nil
     broadcast({ t = "gone", seat = seat })
     net.status = name .. " left"
     lastLobbySent = 0
@@ -458,6 +474,9 @@ local function clientReceive(msg)
     if msg.t == "welcome" then
         net.role, net.mySeat = "client", tonumber(msg.seat)
         net.status = "Connected"
+        local mine, hostMods = modcheck.mine(), modcheck.clean(msg.mods)
+        net.modDiffs = { [1] = (mine and hostMods) and modcheck.compare(hostMods, mine, "you") or nil }
+        if net.modDiffs[1] then noteMods(net.modDiffs[1], "The host") end
         local bytes = profile.avatarBytes()
         if bytes then
             send(server, { t = "avatar", data = bytes })
@@ -520,6 +539,7 @@ local function reset(status)
     net.stats = { upRate = 0, downRate = 0, totalUp = 0, totalDown = 0, msgsOutRate = 0, msgsInRate = 0 }
     net.joinCode, net.blocked = nil, 0
     net.pendingReady, net.pendingReadyAt = nil, nil
+    net.modDiffs = {}
     net.role, net.mySeat, net.seats = "offline", nil, {}
     net.status = status or "Offline"
     if net.onReset then
@@ -730,7 +750,7 @@ function net.update()
         if ev.type == "connect" then
             if net.role == "connecting" and ev.peer == server then
                 send(server, { t = "hello", v = net.VERSION, game = currentVersion, card = myCard(), code = myJoinCode,
-                    samePC = net.samePC or nil })
+                    samePC = net.samePC or nil, mods = modcheck.mine() or nil })
                 net.status = "Joining lobby..."
             elseif net.role == "host" then
                 local now = love.timer.getTime()

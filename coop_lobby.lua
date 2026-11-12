@@ -17,6 +17,7 @@
 local net = require("includes/mods/mnb_coop/coop_net")
 local profile = require("includes/mods/mnb_coop/coop_profile")
 local campaign = require("includes/mods/mnb_coop/coop_campaign")
+local modcheck = require("includes/mods/mnb_coop/coop_mods")
 
 local lobby = {}
 
@@ -213,6 +214,12 @@ local function seatTip(i)
     if s.ping and not isMe(i) then lines[#lines + 1] = "Ping " .. math.floor(s.ping) .. " ms" end
     if net.role ~= "offline" then lines[#lines + 1] = s.ready and "Ready" or "Not ready" end
     if net.role ~= "offline" and s.where and net.WHERE[s.where] then lines[#lines + 1] = net.WHERE[s.where][2] end
+    -- the mod check: the host sees each friend's differences, a friend sees theirs on the host's card
+    local diffs = lobby.modDiffsFor(i)
+    if diffs then
+        lines[#lines + 1] = modcheck.summary(diffs)
+        for _, l in ipairs(modcheck.lines(diffs, 6)) do lines[#lines + 1] = "  " .. l end
+    end
     if isMe(i) then
         lines[#lines + 1] = "Click to change what your card shows"
     elseif net.role == "host" then
@@ -553,6 +560,15 @@ function lobby.mousereleased(x, y)
     end
 end
 
+-- ---------------------------------------------------------------- mod check
+-- Which differences a card shows: the host sees each friend's; a friend sees theirs on the
+-- host's card (they never see other friends' mod lists). nil = nothing to show.
+function lobby.modDiffsFor(i)
+    if net.role == "host" and i ~= 1 then return net.modDiffs[i] end
+    if net.role == "client" and i == 1 then return net.modDiffs[1] end
+    return nil
+end
+
 -- ---------------------------------------------------------------- where everyone is
 -- Each player's place goes on their card for the others (net.WHERE): a friend reading the
 -- battle report or sorting their squad isn't just "missing". Sent when it changes, and
@@ -631,6 +647,13 @@ local function drawSeat(i)
             love.graphics.setColor(rgba(RED, 230))
             love.graphics.rectangle("fill", x + 4, y + 4, BOX - 8, 18)
             outlined("READY", x, y + 4, BOX, "center", nonoFont, WHITE)
+        end
+        -- mods to look at (coop_mods.lua): a "!" in the corner, orange to check, red serious
+        local worst = modcheck.worst(lobby.modDiffsFor(i))
+        if worst >= 2 then
+            love.graphics.setColor(rgba(worst >= 3 and { 200, 30, 30 } or { 220, 140, 20 }, 235))
+            love.graphics.rectangle("fill", x + BOX - 24, y + 24, 20, 20)
+            outlined("!", x + BOX - 24, y + 26, 20, "center", nonoFont, WHITE)
         end
         -- where they are (lobby, campaign, battle report...), along the card's bottom
         local where = net.role ~= "offline" and s.where and net.WHERE[s.where]

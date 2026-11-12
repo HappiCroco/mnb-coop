@@ -72,6 +72,12 @@ name = "includes/mods/mnb_coop/coop_hud"
 
 [[patches]]
 [patches.module]
+source = "coop_mods.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_mods"
+
+[[patches]]
+[patches.module]
 source = "coop_qminput.lua"
 before = "main.lua"
 name = "includes/mods/mnb_coop/coop_qminput"
