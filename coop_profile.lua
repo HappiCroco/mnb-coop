@@ -110,7 +110,7 @@ end
 
 -- A PNG we'll decode: also small in pixels (the IHDR chunk's width and height, bytes
 -- 17-24). A few KB of PNG can claim 30000x30000 pixels, gigabytes once decoded on the
--- host and every friend. Steam avatars are 184x184.
+-- host and every teammate. Steam avatars are 184x184.
 local MAX_AVATAR_SIDE = 512
 function profile.isPng(data)
     if type(data) ~= "string" or #data < 33 or #data > MAX_AVATAR or data:sub(1, 8) ~= "\137PNG\r\n\26\n" then return false end

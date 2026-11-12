@@ -91,7 +91,7 @@ ribbons.register({
 ribbons.register({
     id = 203, name = "Brothers in Arms", image = "coop_rib203.png",
     -- TODO: nothing counts "revives" yet; when the revive hook exists it calls ribbons.addStat("revives")
-    desc = "Revive 25 of a friend's soldiers",
+    desc = "Revive 25 of a teammate's soldiers",
     check = function() return ribbons.stat("revives") >= 25 end,
 })
 
@@ -186,7 +186,7 @@ function ribbons.afterGiveTp(before, nbr)
     if player.tp < want then player.tp = math.min(want, cap + 2) end
 end
 
--- How much our ribbons raise the TP cap above the game's tpMax (the wallets cap friends with it)
+-- How much our ribbons raise the TP cap above the game's tpMax (the wallets cap teammates with it)
 function ribbons.capBonus()
     if type(player) ~= "table" or player.mnb2SubGame == 6 or player.mnb2SubGame == 8 then return 0 end
     if ribbons.inCoop() and hasIt(201) then return 2 end

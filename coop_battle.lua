@@ -375,7 +375,7 @@ local C = nil -- client view state
 -- the camera (volumeScale gfx.lua:13, gunScale/stepScale/ambiantScale/exploScale
 -- urb_engine.lua:17285-17364), as in `clone:setVolume(stepScale(dude)/2.3)`. The host
 -- notes the scale call just before a setVolume: where the sound is and the factor on
--- top; each friend works the loudness out again from their own camera.
+-- top; each teammate works the loudness out again from their own camera.
 local SCALE_CODE = { volumeScale = "v", gunScale = "g", stepScale = "s", exploScale = "e", ambiantScale = "a" }
 local SCALE_NAME = {}
 for name, code in pairs(SCALE_CODE) do SCALE_NAME[code] = name end
@@ -580,7 +580,7 @@ end
 -- ---------------------------------------------------------------- debrief
 -- After a battle the host's game shows a mission-end page (drawState1): 4 mission
 -- successful, 5 retreat/squad lost, 10 classic debrief, 14 war won, 15 war lost.
--- The sync keeps running there so friends see the same page. Those pages animate
+-- The sync keeps running there so teammates see the same page. Those pages animate
 -- with globals (box1..9Timer, play*once, fades, the classic temp* stats), which the
 -- host sends as plain values. Clients accept only names matching these patterns.
 battle.DEBRIEF_PAGES = { [4] = true, [5] = true, [10] = true, [14] = true, [15] = true }
@@ -624,7 +624,7 @@ end
 
 -- host: what the host's screen shows (battle, or which mission-end page)
 local function viewState()
-    -- pz: the host has the game paused (the global `pause`, Esc): friends see a PAUSED banner
+    -- pz: the host has the game paused (the global `pause`, Esc): teammates see a PAUSED banner
     -- instead of everyone just freezing (owner, 2026-11-12)
     return { gs = player.gameState == 0 and 0 or 1, page = tonumber(menuPage) or 0,
         pz = (tonumber(rawget(_G, "pause")) or 0) ~= 0 and 1 or 0 }
@@ -633,7 +633,7 @@ end
 -- client: show the same thing
 local function applyView(v)
     if type(v) ~= "table" then return end
-    -- only a banner: the friend's own `pause` stays 0 (their window must keep drawing and
+    -- only a banner: the teammate's own `pause` stays 0 (their window must keep drawing and
     -- taking their keys; the host's updates simply stop moving things)
     if C then C.hostPaused = v.pz == 1 and v.gs == 0 end
     if v.gs == 0 then
@@ -701,7 +701,8 @@ local function fullMessage(st)
 end
 
 local function hostStart()
-    H = { st = newCaptureState(), pend = {}, snd = {}, acc = 0, seq = 0, joiners = {}, imgSent = {}, gSent = {} }
+    H = { st = newCaptureState(), pend = {}, snd = {}, acc = 0, seq = 0, joiners = {}, imgSent = {}, gSent = {},
+        sentAt = {}, lag = {} }
     battle.hostActive = true
     if battle.soundHooked then scanSourceNames() end
     markSpawnsSeen()
@@ -722,8 +723,96 @@ local function hostStop()
     log("battle sync stopped")
 end
 
+-- ---------------------------------------------------------------- automatic rate
+-- (owner, 2026-11-12) Each teammate reports the last update it has applied ("lag", four
+-- times a second). The host remembers when it sent each update, so now - sentAt, minus the
+-- round trip, is how long that update waited in line: the teammate's backlog. When a backlog
+-- builds, the host sends fewer updates per second (one shared stream, so it follows the
+-- slowest teammate); once everyone has been current for a while it climbs back, never above
+-- the rate chosen in the options. Option autoRate (on by default) turns it off.
+local RATES = { 10, 20, 30, 45, 60 }
+local LAG_HIGH, LAG_LOW = 0.5, 0.15        -- seconds behind: step down above, may step up below
+local STEP_DOWN_GAP, STEP_UP_CALM = 2, 10  -- seconds between steps down; calm needed before a step up
+local LAG_FRESH = 3                        -- a report older than this doesn't count
+local SENT_KEEP = 512                      -- updates whose send time is remembered
+battle.LAG_REPORT = 0.25                   -- teammate: seconds between reports
+
+local function chosenRate()
+    local r = tonumber(net.option("syncRate", 30)) or 30
+    return math.max(1, math.min(60, r))
+end
+
+local function rateBelow(r)
+    for i = #RATES, 1, -1 do if RATES[i] < r then return RATES[i] end end
+    return nil
+end
+
+local function rateAbove(r, cap)
+    for i = 1, #RATES do if RATES[i] > r then return math.min(RATES[i], cap) end end
+    return cap
+end
+
+-- the updates per second the host sends right now
+function battle.currentRate()
+    local cap = chosenRate()
+    if not H or not net.isOn("autoRate", true) then return cap end
+    return math.min(H.rate or cap, cap)
+end
+
+-- host, every frame: move the rate by the worst backlog
+local function updateRate(now)
+    local cap = chosenRate()
+    if not net.isOn("autoRate", true) then
+        H.rate = cap
+        return
+    end
+    H.rate = math.min(H.rate or cap, cap)
+    local worst, who = 0, nil
+    for seat, l in pairs(H.lag) do
+        if net.seats[seat] and now - l.at < LAG_FRESH and l.v > worst then worst, who = l.v, seat end
+    end
+    battle.stats.lag, battle.stats.lagSeat = worst, who
+    if worst > LAG_HIGH then
+        H.calmSince = nil
+        local lower = rateBelow(H.rate)
+        if lower and now - (H.rateAt or -STEP_DOWN_GAP) >= STEP_DOWN_GAP then
+            H.rate, H.rateAt = lower, now
+            log("%s is %.1f s behind: updates down to %d/s", who and net.seats[who] and net.seats[who].name or "?", worst, lower)
+        end
+    elseif worst < LAG_LOW then
+        H.calmSince = H.calmSince or now
+        if H.rate < cap and now - H.calmSince >= STEP_UP_CALM then
+            H.rate, H.rateAt, H.calmSince = rateAbove(H.rate, cap), now, now
+            log("everyone current: updates up to %d/s", H.rate)
+        end
+    else
+        H.calmSince = nil
+    end
+end
+
+-- Host: a teammate's "lag" report. Returns true if the message is ours.
+function battle.onClientMessage(seat, msg)
+    if type(msg) ~= "table" or msg.t ~= "lag" then return false end
+    if not H then return true end
+    local n = tonumber(msg.n)
+    if not n or n ~= math.floor(n) or n > H.seq or n <= H.seq - SENT_KEEP then return true end
+    local e = H.sentAt[n % SENT_KEEP]
+    if not e or e.n ~= n then return true end
+    local now = love.timer.getTime()
+    local ping = (net.seats[seat] and tonumber(net.seats[seat].ping) or 0) / 1000
+    local v = math.max(0, now - e.t - ping)
+    local l = H.lag[seat]
+    if l then
+        l.v, l.at = l.v * 0.5 + v * 0.5, now
+    else
+        H.lag[seat] = { v = v, at = now }
+    end
+    return true
+end
+
 local function hostTick()
     H.seq = H.seq + 1
+    H.sentAt[H.seq % SENT_KEEP] = { n = H.seq, t = love.timer.getTime() }
     local msg = capture(H.st)
     msg.t, msg.n = "snap", H.seq
     msg.img = imageGlobals(H.imgSent, false)
@@ -773,8 +862,8 @@ function battle.hostUpdate(dt)
     if not H then return end
     hostScanSpawns()
     H.acc = H.acc + dt
-    local rate = tonumber(net.option("syncRate", 30)) or 30 -- (config.lua; at most one per frame)
-    local interval = 1 / math.max(1, math.min(60, rate))
+    updateRate(love.timer.getTime())
+    local interval = 1 / battle.currentRate() -- (config.lua, maybe lowered; at most one per frame)
     if H.acc >= interval then
         H.acc = math.min(H.acc - interval, interval)
         local t0 = love.timer.getTime()
@@ -959,6 +1048,7 @@ local function startView(msg)
         player.screenx, player.masterScreenx, player.screeny, player.masterScreeny = x, x, y, y
     end
     battle.viewing = true
+    C.hostLeft = nil -- (a new battle while a kept report was still open)
     battle.leaveAskedAt = nil
     buttons = {}
     mouseOverText = ""
@@ -987,7 +1077,7 @@ function battle.stopView(why)
     log("stopped watching (%s)", tostring(why))
 end
 
--- Client: Back on the mission report. This friend is done with it: back to the lobby
+-- Client: Back on the mission report. This teammate is done with it: back to the lobby
 -- now, still in the session; the host's next battle brings them in again (its "bfull").
 -- Their soldiers' results come from the host when it leaves the report, as before.
 function battle.leaveReport()
@@ -1014,8 +1104,16 @@ function battle.onHostMessage(msg)
         C.lastAt = now
         C.interval = math.max(0.03, math.min(0.25, C.interval * 0.8 + gap * 0.2))
         applySnap(msg)
+        if type(msg.n) == "number" then C.lastN = msg.n end -- reported back: the automatic rate
     elseif msg.t == "bend" then
-        battle.stopView("the host's battle ended")
+        if battle.inDebrief() then
+            -- the host left the mission report: this teammate keeps their own copy, as it
+            -- stands, until they press Back themselves (owner, 2026-11-12)
+            C.hostLeft = true
+            C.hostPaused = false
+        else
+            battle.stopView("the host's battle ended")
+        end
     end
 end
 
@@ -1093,7 +1191,7 @@ end
 
 -- The Classic battle's background loop (gunfire in the distance) starts while the host
 -- sets the battle up (mnb2.lua:369-377), before the sync runs, so it never reaches a
--- friend. Their window starts the game's own loop once, as the game would have.
+-- teammate. Their window starts the game's own loop once, as the game would have.
 function battle.startBackground()
     if not C or C.bgStarted or type(player) ~= "table" or player.gameType ~= 1 or player.gameState ~= 0 then return end
     C.bgStarted = true
@@ -1115,6 +1213,11 @@ function battle.clientUpdate(dt)
     end
     battle.startBackground()
     local now = love.timer.getTime()
+    -- which update I'm on, a few times a second: the host lowers its rate if I fall behind
+    if C.lastN and now - (C.lagSentAt or 0) >= battle.LAG_REPORT then
+        C.lagSentAt = now
+        pcall(net.sendToHost, { t = "lag", n = C.lastN })
+    end
     for el, it in pairs(C.interp) do
         local a = math.min(1, (now - it.t0) / C.interval)
         for f, p in pairs(it) do
@@ -1186,9 +1289,9 @@ end
 -- ---- client: the D-Day landing intro (campaign day 1, drawFiles.lua:1450-1563)
 -- The sea there is the window's background colour, set by the host's game when the boat
 -- ride starts (urb_engine.lua:40176) and back to black on landing (drawFiles.lua:2174):
--- a friend's window never ran that, so their sea was black. Their colour follows the
+-- a teammate's window never ran that, so their sea was black. Their colour follows the
 -- mirrored state instead. The start choices (difficulty, map cycle, read the brief) are
--- the host's to click (diffSelect1..6, urb_engine.lua:44452): a friend sees the step's
+-- the host's to click (diffSelect1..6, urb_engine.lua:44452): a teammate sees the step's
 -- empty frame instead of buttons they can't press, and a note that the host is choosing.
 local SEA = { 28 / 255, 39 / 255, 49 / 255 }
 local HOST_CHOICE = { [-3] = "difficulty", [-5] = "map cycle", [-7] = "whether to read the brief" }
@@ -1228,7 +1331,7 @@ function battle.drawOverlay()
     end
     if C.hostPaused then
         -- the host paused (Esc): say so in the middle of the screen, the game's big font,
-        -- over a dimmed battle (the game's own pause screen isn't drawn on a friend's window)
+        -- over a dimmed battle (the game's own pause screen isn't drawn on a teammate's window)
         love.graphics.push("all")
         love.graphics.origin()
         local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
@@ -1255,7 +1358,8 @@ function battle.drawOverlay()
     local sub = "Esc twice to leave"
     if battle.inDebrief() then
         text = C.hostName:upper() .. "'S MISSION REPORT"
-        sub = "Back: return to the lobby whenever you like"
+        sub = C.hostLeft and "The host has left the report. Back: return to the lobby"
+            or "Back: return to the lobby whenever you like"
     end
     if battle.leaveAskedAt and love.timer.getTime() - battle.leaveAskedAt < 3 then
         sub = "Press Esc again to leave the co-op session"
@@ -1316,6 +1420,7 @@ battle._test = {
     getClient = function() return C end,
     setHost = function(h) H = h end,
     scanSourceNames = scanSourceNames,
+    updateRate = function(now) return updateRate(now) end,
 }
 
 return battle

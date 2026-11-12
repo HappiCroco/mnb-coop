@@ -19,18 +19,18 @@ QuarterMaster's Mod Options screen (QuarterMaster 1.8 or newer); without it the 
 
 ## Play
 Main menu → **Multiplayer**. The host clicks HOST A LOBBY and shares the address (for online play behind a router, a
-[playit.gg](https://playit.gg) UDP tunnel works); friends paste it and click JOIN. When the host picks a mode, everyone
-lands on the ready room: friends press **READY**, then the host presses **START**. Each card shows where that player
+[playit.gg](https://playit.gg) UDP tunnel works); teammates paste it and click JOIN. When the host picks a mode, everyone
+lands on the ready room: teammates press **READY**, then the host presses **START**. Each card shows where that player
 is (lobby, campaign, battle report...).
 
 ## Other mods: do we all need the same ones?
 Not always. The host's game runs the battle; everyone else sees it and sends orders. That decides what matters:
 
 - **Pictures and sounds** (art packs, new uniforms, sound packs): fine either way. Each player sees their own.
-- **A mod only a friend has** runs on their screen only. It can't change the host's battle: the host checks every order
-  a friend sends. A friend with a spawn menu can open it, but nothing they spawn reaches the host's battle.
+- **A mod only a teammate has** runs on their screen only. It can't change the host's battle: the host checks every order
+  a teammate sends. A teammate with a spawn menu can open it, but nothing they spawn reaches the host's battle.
 - **A mod only the host has** changes the battle for everyone. That's often fine (a host's F7 spawn menu, a balance
-  tweak). But if it **adds new things** (new soldiers, weapons, vehicles, pictures), a friend without it may see missing
+  tweak). But if it **adds new things** (new soldiers, weapons, vehicles, pictures), a teammate without it may see missing
   pictures or errors. Then everyone should install it.
 - **Different versions** of the same mod: update so everyone has the same one, to be safe.
 
@@ -39,8 +39,8 @@ player's card (orange: check it, red: serious). Hover the card to see which mod,
 
 | Says | Means |
 |---|---|
-| FINE | pictures or sounds only, a friend-only mod, or a mod that says only the host needs it |
-| CHECK | a mod with code only the host has: if it adds new things, friends need it too |
+| FINE | pictures or sounds only, a mod only a teammate has, or a mod that says only the host needs it |
+| CHECK | a mod with code only the host has: if it adds new things, teammates need it too |
 | SERIOUS | a mod that says everyone needs it, missing on one side or in a different version |
 
 **Mod makers:** you can tell the co-op what your mod needs by adding `"coop"` to its `mod.json`:

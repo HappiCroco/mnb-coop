@@ -15,8 +15,8 @@ local profile = require("includes/mods/mnb_coop/coop_profile")
 local modcheck = require("includes/mods/mnb_coop/coop_mods")
 
 local net = {}
--- Mod differences (coop_mods.lua): host: [seat] = that friend's list of differences;
--- friend: [1] = theirs against the host's. Swapped at hello / welcome.
+-- Mod differences (coop_mods.lua): host: [seat] = that teammate's list of differences;
+-- teammate: [1] = theirs against the host's. Swapped at hello / welcome.
 net.modDiffs = {}
 
 local function noteMods(diffs, who)
@@ -26,11 +26,11 @@ local function noteMods(diffs, who)
     end
 end
 
-net.VERSION = "1.0.0" -- co-op protocol; must match on both sides
+net.VERSION = "1.1.0" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
 -- enet peer timeout (ms): give up on a peer after `min` once its unanswered packets have
 -- been resent the limit, and after `max` in any case. Was 3000/8000 (a crashed game noticed
--- fast), but a slow college line or a VPN stalls for longer and the friend was dropped
+-- fast), but a slow college line or a VPN stalls for longer and the teammate was dropped
 -- after a few seconds of play (owner, 2026-11-12). 8 s / 20 s rides that out; a crash is
 -- still noticed within ~20 s instead of enet's 30.
 net.TIMEOUT = { 8000, 20000 }
@@ -136,7 +136,7 @@ end
 -- fragments of its own MTU (1400 + headers), and on some routes (a playit.gg tunnel,
 -- PPPoE, a VPN) packets that size never arrive: small ones get through, so the join
 -- works, but the first big message (an avatar) never completes, and since channel 0 is
--- reliable and ordered, nothing after it arrives either (owner, 2026-11-11: a friend on
+-- reliable and ordered, nothing after it arrives either (owner, 2026-11-11: a teammate on
 -- another PC sat "Connected" with 0/3 players). So we split big messages ourselves:
 --   "\0<total>:<first piece>" then "\0<piece>"..., in order on the same channel,
 -- reassembled before decoding. A codec message never starts with "\0".
@@ -481,7 +481,7 @@ local function clientReceive(msg)
         if bytes then
             send(server, { t = "avatar", data = bytes })
             -- our own card: the host forwards our avatar to everyone but us, so set it here
-            -- (without this a friend saw a default soldier's face on their own card)
+            -- (without this a teammate saw a default soldier's face on their own card)
             if net.mySeat then
                 avatarImages[net.mySeat] = profile.imageFromBytes(bytes, "seat" .. net.mySeat)
                 if net.seats[net.mySeat] then net.seats[net.mySeat].avatar = avatarImages[net.mySeat] end
@@ -613,7 +613,7 @@ function net.join(text)
     reset()
     myJoinCode = code
     -- 127.0.0.1 / localhost: both game copies run on this PC (the two-window test setup).
-    -- (A host can't tell this from its side: behind playit.gg every friend comes from 127.0.0.1.)
+    -- (A host can't tell this from its side: behind playit.gg every teammate comes from 127.0.0.1.)
     net.samePC = addr == "127.0.0.1" or addr:lower() == "localhost"
     if not loadEnet() then return false end
     local ok, h = pcall(enet.host_create, nil, 1, 2)
@@ -665,7 +665,7 @@ net.WHERE = {
     room = { "READY UP", "In the ready room" },
 }
 
--- This machine's place: mine on my card (the host's at once; a friend's goes to the host).
+-- This machine's place: mine on my card (the host's at once; a teammate's goes to the host).
 function net.setWhere(w)
     if not net.WHERE[w] then return end
     local mine = net.mySeat and net.seats[net.mySeat]
@@ -680,8 +680,8 @@ function net.setWhere(w)
     end
 end
 
--- The ready room (owner, 2026-11-12): the host picked a mode and waits for every friend's READY.
--- net.stage is its title ("CO-OP CLASSIC"); it rides on the lobby update, so a friend who joins
+-- The ready room (owner, 2026-11-12): the host picked a mode and waits for every teammate's READY.
+-- net.stage is its title ("CO-OP CLASSIC"); it rides on the lobby update, so a teammate who joins
 -- late is pulled in too. nil = no ready room. Host only sets it.
 net.stage = nil
 function net.setStage(title)
@@ -701,7 +701,7 @@ function net.resetReady()
     lastLobbySent = 0
 end
 
--- The friends (not the host: starting is the host's "ready") who haven't pressed READY.
+-- The teammates (not the host: starting is the host's "ready") who haven't pressed READY.
 function net.notReady()
     local names = {}
     for i = 2, net.MAX_SEATS do
@@ -734,7 +734,7 @@ function net.playerCount()
     return n
 end
 
--- Every friend is ready (true with no friends: the host plays alone).
+-- Every teammate is ready (true with no teammates: the host plays alone).
 function net.allReady()
     return #net.notReady() == 0
 end

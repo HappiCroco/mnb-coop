@@ -1,6 +1,6 @@
 # Mud and Blood Co-op. Standalone; QuarterMaster 1.8's menu (or the old GMenu) gives it an options page and page numbers.
 [manifest]
-version = "1.0.0"
+version = "1.1.0"
 priority = 80
 
 # For QuarterMaster's mod list (Mods > Browse); the game ignores it.
@@ -252,7 +252,7 @@ position = "at"
 payload = "(coopSquadMax and coopSquadMax() or 6)"
 
 # Size control (classic big-squad punishment: random artillery, WP, airbursts,
-# strafes) starts above a full squad; co-op Classic with friends: above 12 (owner,
+# strafes) starts above a full squad; co-op Classic with teammates: above 12 (owner,
 # 2026-11-11: "three for each player"). See coopSizeLimit in mnb_coop_main.lua.
 [[patches]]
 [patches.regex]

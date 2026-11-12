@@ -2,12 +2,12 @@
 -- CO-OP MOD CHECK
 -- Which mods each player has, and how much a difference matters (owner, 2026-11-12:
 -- "say which mod is missing on which side, and how serious it is"). The host runs
--- the battle and friends only watch and give orders, so:
+-- the battle and teammates only watch and give orders, so:
 --   * a picture/sound mod (no code) only changes how things look: fine either way;
---   * a code mod only the FRIEND has runs on their screen only: it can't change the
+--   * a code mod only the TEAMMATE has runs on their screen only: it can't change the
 --     host's battle (the host checks every order). Fine;
 --   * a code mod only the HOST has changes the battle for everyone. Usually fine, but
---     if it adds new things (soldiers, weapons, pictures), a friend without it may see
+--     if it adds new things (soldiers, weapons, pictures), a teammate without it may see
 --     gaps or errors: CHECK;
 --   * a mod marked "both" (below) missing on one side, or with different versions: SERIOUS.
 -- A mod can say what co-op needs in its mod.json: "coop": "host" (only the host needs it,
@@ -142,12 +142,12 @@ end
 
 mods.SEVERITY = { [3] = "SERIOUS", [2] = "CHECK", [1] = "FINE" }
 
--- Differences between the host's list and one friend's: { { id, n, sev (1-3), text }, ... },
--- worst first. friendName names the friend in the texts.
+-- Differences between the host's list and one teammate's: { { id, n, sev (1-3), text }, ... },
+-- worst first. friendName names the teammate in the texts.
 function mods.compare(hostList, friendList, friendName)
     local out = {}
     if type(hostList) ~= "table" or type(friendList) ~= "table" then return out end
-    friendName = friendName or "the friend"
+    friendName = friendName or "the teammate"
     local byId = {}
     for _, m in ipairs(hostList) do byId[m.id] = { host = m } end
     for _, m in ipairs(friendList) do

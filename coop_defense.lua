@@ -231,7 +231,7 @@ function defense.resume()
 end
 
 -- ---------------------------------------------------------------- waves
--- Each side faces the game's full wave (owner, 2026-11-11 with friends; 2026-11-12 solo too:
+-- Each side faces the game's full wave (owner, 2026-11-11 with teammates; 2026-11-12 solo too:
 -- "if the original spawns 4, co-op has 8, 4 on each side"): every German a normal wave brings
 -- stays where the game put him (right) and gets a twin on the left, mirrored: as far left of
 -- the westmost player as the game put him right of the eastmost one. Its vehicles too (each

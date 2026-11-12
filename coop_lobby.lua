@@ -110,14 +110,14 @@ local function setFieldText(text)
     end
 end
 
--- What a friend should type to reach this host: the pasted playit address, else our LAN address.
+-- What a teammate should type to reach this host: the pasted playit address, else our LAN address.
 local function baseAddress()
     local s = profile.settings.shareAddress or ""
     if s ~= "" then return s end
     return (lobby.lanIp or "127.0.0.1") .. ":" .. port()
 end
 
--- The join code rides along after a "#", so friends paste one thing and are let in.
+-- The join code rides along after a "#", so teammates paste one thing and are let in.
 local function shareAddress()
     return baseAddress() .. (net.joinCode and ("#" .. net.joinCode) or "")
 end
@@ -170,9 +170,9 @@ end
 
 -- ---------------------------------------------------------------- the ready room
 -- (owner, 2026-11-12) READY is asked when it means something: the host picks a mode (a Classic
--- mode, or GO on a campaign mission), and if a friend isn't ready yet the start waits in the
+-- mode, or GO on a campaign mission), and if a teammate isn't ready yet the start waits in the
 -- ready room instead. Everyone is pulled onto that page (net.stage rides on the lobby update),
--- friends press READY, the host presses START, and the start the host clicked is replayed.
+-- teammates press READY, the host presses START, and the start the host clicked is replayed.
 lobby.roomPage = nil
 function lobby.getRoomPage()
     if lobby.roomPage then return lobby.roomPage end
@@ -188,7 +188,7 @@ end
 lobby.room = nil -- host: { title, back = page to return to, start = the start to replay }
 
 -- Host about to start something called `title`: true if it may go now (offline, alone, or
--- every friend ready). Otherwise the ready room opens with `retry`, and it returns false.
+-- every teammate ready). Otherwise the ready room opens with `retry`, and it returns false.
 function lobby.gate(title, retry)
     if net.role ~= "host" or net.allReady() then return true end
     lobby.room = { title = title, back = menuPage, start = retry }
@@ -205,7 +205,7 @@ local function closeRoom(page)
     mouseOverText = ""
 end
 
--- Every frame: friends follow the host's ready room in and out; a host who lost the lobby leaves it.
+-- Every frame: teammates follow the host's ready room in and out; a host who lost the lobby leaves it.
 function lobby.updateRoom()
     local room = lobby.getRoomPage()
     local battle = mnbCoop and mnbCoop.battle
@@ -255,14 +255,14 @@ local BLANK = { "coopNothing", "", "" }
 local function links()
     if net.role == "host" then
         return {
-            { "coopCopy", "COPY ADDRESS", "Copy the address above to send it to your friends (Ctrl+C)" },
+            { "coopCopy", "COPY ADDRESS", "Copy the address above to send it to your teammates (Ctrl+C)" },
             (profile.settings.shareAddress or "") == ""
             and { "coopPaste", "PASTE ADDRESS", "Paste your playit.gg address from the clipboard (Ctrl+V)" }
             or { "coopLocal", "USE LOCAL ADDRESS", "Go back to your home-network address " .. (lobby.lanIp or "") },
             net.joinCode and { "coopNewCode", "NEW CODE", "Make a new join code. Players already in stay;\nanyone with the old address can't join any more." }
             or { "coopNothing", "", "" },
             { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
-            ",\npaste its address above, then COPY ADDRESS and send it to your friends." },
+            ",\npaste its address above, then COPY ADDRESS and send it to your teammates." },
             { "coopLeave", "CLOSE LOBBY", "Close the lobby; everyone is disconnected" },
         }
     elseif net.role == "client" then
@@ -292,7 +292,7 @@ local function seatTip(i)
     if s.ping and not isMe(i) then lines[#lines + 1] = "Ping " .. math.floor(s.ping) .. " ms" end
     if net.role ~= "offline" then lines[#lines + 1] = s.ready and "Ready" or "Not ready" end
     if net.role ~= "offline" and s.where and net.WHERE[s.where] then lines[#lines + 1] = net.WHERE[s.where][2] end
-    -- the mod check: the host sees each friend's differences, a friend sees theirs on the host's card
+    -- the mod check: the host sees each teammate's differences, a teammate sees theirs on the host's card
     local diffs = lobby.modDiffsFor(i)
     if diffs then
         lines[#lines + 1] = modcheck.summary(diffs)
@@ -346,7 +346,7 @@ function lobby.registerButtons()
         if net.role == "host" then
             addButton(ROOM_BIG[1], ROOM_BIG[2], ROOM_BIG[3], ROOM_BIG[4], "coopRoomStart", net.allReady()
                 and "Everyone is ready: start for everyone"
-                or "Waits for every friend's READY")
+                or "Waits for every teammate's READY")
             addButton(32, 686, 80, 30, "coopRoomCancel", "Back to choosing; nobody starts")
         else
             addButton(ROOM_BIG[1], ROOM_BIG[2], ROOM_BIG[3], ROOM_BIG[4], "coopRoomReady",
@@ -372,7 +372,7 @@ function lobby.registerButtons()
     addButton(1030, 185, 200, 465, "coopOptions", "Co-op settings (port, debug log)")
     if net.role == "host" or net.role == "offline" then
         addButton(FIELD.x, FIELD.y, FIELD.w, FIELD.h, "coopField", net.role == "host"
-            and "The address friends type. Your local one is shown; paste a playit.gg address here for online play."
+            and "The address your teammates type. Your local one is shown; paste a playit.gg address here for online play."
             or "The host's address: an IP (192.168.0.10:47913) or a playit.gg address. Ctrl+V pastes, Enter joins.")
     end
     for i, l in ipairs(links()) do
@@ -675,8 +675,8 @@ function lobby.mousereleased(x, y)
 end
 
 -- ---------------------------------------------------------------- mod check
--- Which differences a card shows: the host sees each friend's; a friend sees theirs on the
--- host's card (they never see other friends' mod lists). nil = nothing to show.
+-- Which differences a card shows: the host sees each teammate's; a teammate sees theirs on the
+-- host's card (they never see other teammates' mod lists). nil = nothing to show.
 function lobby.modDiffsFor(i)
     if net.role == "host" and i ~= 1 then return net.modDiffs[i] end
     if net.role == "client" and i == 1 then return net.modDiffs[1] end
@@ -684,7 +684,7 @@ function lobby.modDiffsFor(i)
 end
 
 -- ---------------------------------------------------------------- where everyone is
--- Each player's place goes on their card for the others (net.WHERE): a friend reading the
+-- Each player's place goes on their card for the others (net.WHERE): a teammate reading the
 -- battle report or sorting their squad isn't just "missing". Sent when it changes, and
 -- again every few seconds (a lost or early one fixes itself).
 function lobby.whereAmI()
@@ -960,7 +960,7 @@ local function drawHub()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
--- The ready room: who is ready, and the one big button (READY for a friend, START for the host).
+-- The ready room: who is ready, and the one big button (READY for a teammate, START for the host).
 local function drawRoom()
     for i = 1, net.MAX_SEATS do drawSeat(i) end
     local hosting = net.role == "host"
@@ -977,8 +977,8 @@ local function drawRoom()
     love.graphics.rectangle("fill", x + 25, y + 25, w - 50, h - 50)
     love.graphics.setColor(rgba(BLACK))
     love.graphics.rectangle("line", x + 25, y + 25, w - 50, h - 50)
-    outlined(hosting and "WAITING FOR YOUR FRIENDS" or "THE HOST PICKED " .. title, x + 45, y + 40, w - 90, "left", bigFont, WHITE)
-    outlined(hosting and "START unlocks once every friend has pressed READY."
+    outlined(hosting and "WAITING FOR YOUR TEAMMATES" or "THE HOST PICKED " .. title, x + 45, y + 40, w - 90, "left", bigFont, WHITE)
+    outlined(hosting and "START unlocks once every teammate has pressed READY."
         or "Press READY when you're set. The host starts the battle.", x + 45, y + 74, w - 90, "left", nonoFont, LIGHT)
     local row = 0
     for i = 1, net.MAX_SEATS do
@@ -1081,7 +1081,7 @@ function lobby.draw()
     drawCareerSquad()
     drawTile(580, 185, 200, 465, { 605, 210, 150, 360 }, campaingIcon1, "CO-OP CAMPAIGN", 590, true,
         campaign.hasSave() and "your war" or "new war")
-    -- a friend doesn't do anything in Classic on their own (the host starts it): shown closed
+    -- a teammate doesn't do anything in Classic on their own (the host starts it): shown closed
     local canClassic = net.role == "host" or net.role == "offline"
     drawTile(805, 185, 200, 465, { 830, 210, 150, 360 }, classicIcon1, "CO-OP CLASSIC", 590, canClassic,
         canClassic and "defense" or "the host starts it")

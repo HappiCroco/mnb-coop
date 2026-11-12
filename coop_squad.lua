@@ -1,14 +1,14 @@
 -- =============================================================================
--- CO-OP SQUAD IN BATTLE: who owns which soldier, and orders from friends
+-- CO-OP SQUAD IN BATTLE: who owns which soldier, and orders from teammates
 -- Squad soldiers carry coopSeat (set by coop_campaign.arrangeSquad). In battle:
 --   * each squad soldier has a ring in its owner's seat colour, and its face in
 --     the face bar a frame in that colour;
 --   * number keys 1..n select the n soldiers of the player pressing them, in face
 --     bar order; 7 selects all of them; box and click selection only take your own;
 --   * dragging a face (right mouse) only reorders inside your own group;
---   * friends select on their mirror and click to move; the order goes to the host,
+--   * teammates select on their mirror and click to move; the order goes to the host,
 --     which replays the click through the game's own mouse code with only that
---     friend's soldiers selected (no copy of the game's move rules here).
+--     teammate's soldiers selected (no copy of the game's move rules here).
 -- A soldier whose player isn't connected counts as the host's.
 -- Active only in the co-op campaign with more than one player, or while watching.
 -- =============================================================================
@@ -18,7 +18,7 @@ local wallet = require("includes/mods/mnb_coop/coop_wallet")
 local squad = {}
 
 local MAX_ORDER_IDS = 40 -- a Classic army can be big
-local replaying = false -- the host is running a friend's click through the game's code right now
+local replaying = false -- the host is running a teammate's click through the game's code right now
 
 local function log(fmt, ...)
     if net.isOn("debug", false) then print("[mnb_coop] " .. string.format(fmt, ...)) end
@@ -33,7 +33,7 @@ local function viewing()
     return mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing
 end
 
--- true when ownership rules apply right now: watching, or hosting friends in the
+-- true when ownership rules apply right now: watching, or hosting teammates in the
 -- co-op campaign or in a Classic battle
 function squad.active()
     if viewing() then return true end
@@ -228,7 +228,7 @@ local function promoAllowed(t, label)
 end
 squad.promoAllowed = promoAllowed
 
--- a coordinate from a friend: a finite number on (or near) the map, else nil. The codec
+-- a coordinate from a teammate: a finite number on (or near) the map, else nil. The codec
 -- reads "inf" as a number; an infinite target would end in NaN positions in the game.
 local function coord(v)
     v = tonumber(v)
@@ -286,9 +286,9 @@ end
 
 -- ---------------------------------------------------------------- prompts (host)
 -- A skill or an item that wants a map click (smoke, frag, medic bag...) arms the
--- game's mousePrompt/mousePrompter. The host keeps one armed prompt per friend
+-- game's mousePrompt/mousePrompter. The host keeps one armed prompt per teammate
 -- here, never in the globals between frames, so its own prompt is untouched; the
--- friend's next left click fires it (main.lua:4471). The friend is told, so their
+-- teammate's next left click fires it (main.lua:4471). The teammate is told, so their
 -- window shows the game's aiming cursor.
 local seatPrompt = {}
 
@@ -331,7 +331,7 @@ function squad.forgetSeat(seat)
     if seat then seatPrompt[seat] = nil else seatPrompt = {} end
 end
 
--- Runs a friend's move: their soldiers selected, everything else as if nothing
+-- Runs a teammate's move: their soldiers selected, everything else as if nothing
 -- was on screen but the found loot and crates, then the game's own left-click
 -- release at that point (with the mouse there too: the loot buttons and the
 -- crate handlers read love.mouse, Button.new urb_engine.lua:134-137, 7595).
@@ -417,7 +417,7 @@ local function runMove(o)
         end
     end
     mousePrompt, mousePrompter = armed and armed.p or 0, armed and armed.who or 0
-    altMove = o.alt and 1 or 0 -- Alt held: a waypoint, sent on the friend's Alt release
+    altMove = o.alt and 1 or 0 -- Alt held: a waypoint, sent on the teammate's Alt release
     mouseOverIconId, mouseDropIconId, dragingIcon = 0, 0, 0
     local sx, sy = o.x - (player.screenx or 0), o.y - (player.screeny or 0)
     selectionX, selectionY = sx, sy
@@ -427,11 +427,11 @@ local function runMove(o)
     for _, name in ipairs(SAVED_GLOBALS) do _G[name] = g[name] end
     for t, s in pairs(savedSel) do if not mine[t] then t.selected = s end end
     for v, s in pairs(savedVeh) do v.selected = s end
-    if not ok then print("[mnb_coop] friend's move: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's move: " .. tostring(err)) end
     log("seat %d moved %d soldier(s)", o.seat, #o.ids)
 end
 
--- A friend's promotion choice for one of their soldiers: the game's own panel
+-- A teammate's promotion choice for one of their soldiers: the game's own panel
 -- button (specClick / perkSelectButton...), with specID pointing at him. The
 -- host's own panel, if open, is left as it was.
 local PANEL_GLOBALS = { "specID", "specDisplay", "skillDisplay", "abilityDisplay", "buttoned" }
@@ -454,13 +454,13 @@ local function runPromo(o)
         ok, err = pcall(_G[o.label .. "Button"])
     end
     for _, name in ipairs(PANEL_GLOBALS) do _G[name] = g[name] end
-    if not ok then print("[mnb_coop] friend's promotion: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's promotion: " .. tostring(err)) end
     log("seat %d promoted %s: %s", o.seat, tostring(t.name), o.label)
 end
 
--- A friend's soldier skill (the face panel's skill_1..3): the game's skillClick
+-- A teammate's soldier skill (the face panel's skill_1..3): the game's skillClick
 -- with specID pointing at him. Skills that act at once are done; skills that want
--- a map click arm that friend's prompt.
+-- a map click arm that teammate's prompt.
 local SKILL_GLOBALS = { "specID", "specDisplay", "skillDisplay", "abilityDisplay", "buttoned", "mousePrompt",
     "mousePrompter", "mousePromptLock" }
 
@@ -482,7 +482,7 @@ local function runSkill(o)
         keepPrompt(o.seat, before) -- a new prompt replaces the one they had armed
     end
     for _, name in ipairs(SKILL_GLOBALS) do _G[name] = g[name] end
-    if not ok then print("[mnb_coop] friend's skill: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's skill: " .. tostring(err)) end
     log("seat %d used skill %d of %s", o.seat, o.n, tostring(t.name))
 end
 
@@ -536,7 +536,7 @@ end
 -- ---------------------------------------------------------------- HUD buttons
 -- The bottom-right battle buttons: command abilities (playerSkill_), and in Classic
 -- the reinforcement/command/radio/build/gear/item/vehicle/upgrade menus, trench
--- buttons, directives and the broom. Opening and closing a menu is the friend's own
+-- buttons, directives and the broom. Opening and closing a menu is the teammate's own
 -- business (their window); a button that does something comes to the host as
 -- `hud {label, x, y, cx, cy, ids, menu}` and runs there as the game's own click.
 
@@ -544,7 +544,7 @@ end
 local HUD_LOCAL = { mnb2Reinf = true, mnb2Command = true, mnb2Radio = true, mnb2Build = true, mnb2Gear = true,
     mnb2Item = true, mnb2Vehicles = true, mnb2Upgrades = true, mnb2Back = true, directiveMenu = true,
     -- map tips: each window has its own copies (a spawned effect list, coop_battle SPAWN), so
-    -- a friend's click fades their own (tipCuezButton on the mirror), not the host's
+    -- a teammate's click fades their own (tipCuezButton on the mirror), not the host's
     tipCuez = true }
 squad.HUD_LOCAL = HUD_LOCAL
 
@@ -564,7 +564,7 @@ function squad.isHudLabel(label)
         or label == "broomer" or label == "noSkillTrench" or label == "tipCuez"
 end
 
--- a HUD button a friend may have the host run
+-- a HUD button a teammate may have the host run
 function squad.hudLabelOk(label)
     if type(label) ~= "string" or #label > 40 or not label:match("^[%w_]+$") or HUD_LOCAL[label] then return false end
     if HUD_HOST_ONLY[label] then return false end
@@ -578,7 +578,7 @@ end
 local HUD_GLOBALS = { "mnb2MenuDisplay", "mnb2MouseOver", "trenchMouseOver", "buttonFade", "mouseOverText",
     "contextualText", "redText" }
 
--- Runs a friend's HUD click: their selection, their menu page, their camera and
+-- Runs a teammate's HUD click: their selection, their menu page, their camera and
 -- their mouse point for one call of the game's own button dispatch (Button.new's
 -- click, urb_engine.lua:134), then everything back as the host had it. Soldiers
 -- the click brings in (reinforcements) are theirs.
@@ -638,7 +638,7 @@ local function runHud(o)
     end) end
     replaying = false
     player.screenx, player.screeny, player.masterScreenx, player.masterScreeny = cam[1], cam[2], cam[3], cam[4]
-    -- soldiers that arrived with this click are the friend's
+    -- soldiers that arrived with this click are the teammate's
     for i = count + 1, #troops do
         local t = troops[i]
         if t.playerControlled == 1 and t.faction == "allied" and t.coopOwner == nil and t.coopSquad ~= 1 then
@@ -652,11 +652,11 @@ local function runHud(o)
     for t, s in pairs(savedSel) do if not mine[t] then t.selected = s end end
     for t in pairs(mine) do t.selected = false end
     for v, s in pairs(savedVeh) do v.selected = s end
-    if not ok then print("[mnb_coop] friend's button: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's button: " .. tostring(err)) end
     log("seat %d pressed %s", o.seat, o.label)
 end
 
--- A friend drags one of their faces onto another of theirs: the two swap places
+-- A teammate drags one of their faces onto another of theirs: the two swap places
 -- in the face bar, like the game's drop (main.lua:6908-6912).
 local function runSwap(o)
     local troops = player.deployedTroops
@@ -674,10 +674,10 @@ local function runSwap(o)
     log("seat %d swapped faces %d and %d", o.seat, i, j)
 end
 
--- one friend's order, run with their wallet (an error is printed, the rest of the queue goes on)
+-- one teammate's order, run with their wallet (an error is printed, the rest of the queue goes on)
 local function runAs(seat, fn, o)
     local ok, err = wallet.with(seat, fn, o)
-    if not ok then print("[mnb_coop] friend's order: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's order: " .. tostring(err)) end
 end
 
 -- Host, at the start of its frame (before the game's update).
@@ -691,7 +691,7 @@ function squad.hostRunOrders()
     if not gameRelease or type(player) ~= "table" or player.gameState ~= 0 or pause ~= 0 then return end
     for _, o in ipairs(list) do
         -- Anything that can spend TP (a bought unit, a radio strike, a gun, a skill, a fired
-        -- prompt) runs with that friend's wallet in player.tp (coop_wallet.lua); the host's
+        -- prompt) runs with that teammate's wallet in player.tp (coop_wallet.lua); the host's
         -- comes back afterwards, even if the game's code fails.
         if o.kind == "promo" then
             runPromo(o)
@@ -710,7 +710,7 @@ function squad.hostRunOrders()
 end
 
 -- Host: a face click opens the promotion panel and selects the soldier
--- (iconClick, urb_engine.lua:2606). Not for a friend's soldier: they choose.
+-- (iconClick, urb_engine.lua:2606). Not for a teammate's soldier: they choose.
 function squad.wrapIconClick(orig)
     return function(idz, ...)
         if squad.active() and not viewing() then
@@ -723,7 +723,7 @@ function squad.wrapIconClick(orig)
 end
 
 -- ---------------------------------------------------------------- client input
--- While watching, the friend selects on the mirror (selection is never synced)
+-- While watching, the teammate selects on the mirror (selection is never synced)
 -- and clicks the ground to move. Same feel as the game: drag a box to select,
 -- click a soldier, 1..n for your soldiers, 7 for all of yours, shift adds.
 local press = nil
@@ -783,7 +783,7 @@ local function faceAt(x, y)
     return nil
 end
 
-local drag = nil -- the face a friend is dragging (right mouse), like the game's dragingIcon
+local drag = nil -- the face a teammate is dragging (right mouse), like the game's dragingIcon
 
 function squad.clientMousepressed(x, y, button)
     if button == 1 then press = { x = x, y = y } end
@@ -837,7 +837,7 @@ function squad.clientMousereleased(x, y, button)
     if button ~= 1 or not press then return end
     if type(player) ~= "table" or player.gameState ~= 0 then
         -- the mission report: nothing to order, but Back (the game's button, 32,686 60x30,
-        -- urb_engine.lua:8236) takes this friend back to the lobby whenever they like
+        -- urb_engine.lua:8236) takes this teammate back to the lobby whenever they like
         -- (owner, 2026-11-12: no waiting for the host to leave the report)
         press = nil
         -- (inline box test: inBox is defined further down this file)
@@ -891,7 +891,7 @@ function squad.clientMousereleased(x, y, button)
 end
 
 -- ---------------------------------------------------------------- HUD (client)
--- The friend's window runs the game's own HUD pass (buttonEngine) on the mirror to
+-- The teammate's window runs the game's own HUD pass (buttonEngine) on the mirror to
 -- know where its buttons are and what their tooltips say, with the game's random
 -- battle chatter part skipped (soundCpt) and sounds muted as always while watching.
 local gameButtonEngine = nil
@@ -961,12 +961,12 @@ function squad.clientHudClick(x, y)
     return true
 end
 
--- Host → this friend: their HUD menu page after a button (some buttons close it)
+-- Host → this teammate: their HUD menu page after a button (some buttons close it)
 function squad.onUi(msg)
     mnb2MenuDisplay = tonumber(msg.m) or 0
 end
 
--- Host → this friend: their armed prompt (0 = none). The game draws its aiming
+-- Host → this teammate: their armed prompt (0 = none). The game draws its aiming
 -- cursor from mousePrompt/mousePrompter (drawFiles.lua), on the mirror.
 function squad.onPrompt(msg)
     mousePrompt = tonumber(msg.p) or 0
@@ -1002,7 +1002,7 @@ local function miniMapBox()
 end
 
 -- The mission report (menuPage 4/5 on the host's mirror): the game's menu pass
--- (buttonUpdateMenu, urb_engine.lua:8235-8303) isn't run on a friend's window, so its
+-- (buttonUpdateMenu, urb_engine.lua:8235-8303) isn't run on a teammate's window, so its
 -- hover areas are rebuilt here, in its order (the first one under the mouse wins,
 -- 8487-8514): Back, then per squad slot 1..6 the soldier's name and his new awards.
 local REPORT_SLOTS = { { 667, 246, 710 }, { 667, 321, 710 }, { 667, 396, 710 },
@@ -1136,7 +1136,7 @@ function squad.clientHover()
 end
 
 -- ---------------------------------------------------------------- promotions (client)
--- The friend opens the game's promotion panel for their own soldier on their
+-- The teammate opens the game's promotion panel for their own soldier on their
 -- mirror (the game draws it from specID/specDisplay/skillDisplay); a choice goes
 -- to the host as a "promo" order, which runs the game's own button there.
 
