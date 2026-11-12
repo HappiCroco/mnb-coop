@@ -91,7 +91,7 @@ ribbons.register({
 ribbons.register({
     id = 203, name = "Brothers in Arms", image = "coop_rib203.png",
     -- TODO: nothing counts "revives" yet; when the revive hook exists it calls ribbons.addStat("revives")
-    desc = "Revive 25 of a friend's soldiers",
+    desc = "Revive 25 of a teammate's soldiers",
     check = function() return ribbons.stat("revives") >= 25 end,
 })
 

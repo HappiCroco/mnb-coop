@@ -255,14 +255,14 @@ local BLANK = { "coopNothing", "", "" }
 local function links()
     if net.role == "host" then
         return {
-            { "coopCopy", "COPY ADDRESS", "Copy the address above to send it to your friends (Ctrl+C)" },
+            { "coopCopy", "COPY ADDRESS", "Copy the address above to send it to your teammates (Ctrl+C)" },
             (profile.settings.shareAddress or "") == ""
             and { "coopPaste", "PASTE ADDRESS", "Paste your playit.gg address from the clipboard (Ctrl+V)" }
             or { "coopLocal", "USE LOCAL ADDRESS", "Go back to your home-network address " .. (lobby.lanIp or "") },
             net.joinCode and { "coopNewCode", "NEW CODE", "Make a new join code. Players already in stay;\nanyone with the old address can't join any more." }
             or { "coopNothing", "", "" },
             { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
-            ",\npaste its address above, then COPY ADDRESS and send it to your friends." },
+            ",\npaste its address above, then COPY ADDRESS and send it to your teammates." },
             { "coopLeave", "CLOSE LOBBY", "Close the lobby; everyone is disconnected" },
         }
     elseif net.role == "client" then
@@ -346,7 +346,7 @@ function lobby.registerButtons()
         if net.role == "host" then
             addButton(ROOM_BIG[1], ROOM_BIG[2], ROOM_BIG[3], ROOM_BIG[4], "coopRoomStart", net.allReady()
                 and "Everyone is ready: start for everyone"
-                or "Waits for every friend's READY")
+                or "Waits for every teammate's READY")
             addButton(32, 686, 80, 30, "coopRoomCancel", "Back to choosing; nobody starts")
         else
             addButton(ROOM_BIG[1], ROOM_BIG[2], ROOM_BIG[3], ROOM_BIG[4], "coopRoomReady",
@@ -372,7 +372,7 @@ function lobby.registerButtons()
     addButton(1030, 185, 200, 465, "coopOptions", "Co-op settings (port, debug log)")
     if net.role == "host" or net.role == "offline" then
         addButton(FIELD.x, FIELD.y, FIELD.w, FIELD.h, "coopField", net.role == "host"
-            and "The address friends type. Your local one is shown; paste a playit.gg address here for online play."
+            and "The address your teammates type. Your local one is shown; paste a playit.gg address here for online play."
             or "The host's address: an IP (192.168.0.10:47913) or a playit.gg address. Ctrl+V pastes, Enter joins.")
     end
     for i, l in ipairs(links()) do
@@ -977,8 +977,8 @@ local function drawRoom()
     love.graphics.rectangle("fill", x + 25, y + 25, w - 50, h - 50)
     love.graphics.setColor(rgba(BLACK))
     love.graphics.rectangle("line", x + 25, y + 25, w - 50, h - 50)
-    outlined(hosting and "WAITING FOR YOUR FRIENDS" or "THE HOST PICKED " .. title, x + 45, y + 40, w - 90, "left", bigFont, WHITE)
-    outlined(hosting and "START unlocks once every friend has pressed READY."
+    outlined(hosting and "WAITING FOR YOUR TEAMMATES" or "THE HOST PICKED " .. title, x + 45, y + 40, w - 90, "left", bigFont, WHITE)
+    outlined(hosting and "START unlocks once every teammate has pressed READY."
         or "Press READY when you're set. The host starts the battle.", x + 45, y + 74, w - 90, "left", nonoFont, LIGHT)
     local row = 0
     for i = 1, net.MAX_SEATS do

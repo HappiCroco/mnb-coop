@@ -427,7 +427,7 @@ local function runMove(o)
     for _, name in ipairs(SAVED_GLOBALS) do _G[name] = g[name] end
     for t, s in pairs(savedSel) do if not mine[t] then t.selected = s end end
     for v, s in pairs(savedVeh) do v.selected = s end
-    if not ok then print("[mnb_coop] friend's move: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's move: " .. tostring(err)) end
     log("seat %d moved %d soldier(s)", o.seat, #o.ids)
 end
 
@@ -454,7 +454,7 @@ local function runPromo(o)
         ok, err = pcall(_G[o.label .. "Button"])
     end
     for _, name in ipairs(PANEL_GLOBALS) do _G[name] = g[name] end
-    if not ok then print("[mnb_coop] friend's promotion: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's promotion: " .. tostring(err)) end
     log("seat %d promoted %s: %s", o.seat, tostring(t.name), o.label)
 end
 
@@ -482,7 +482,7 @@ local function runSkill(o)
         keepPrompt(o.seat, before) -- a new prompt replaces the one they had armed
     end
     for _, name in ipairs(SKILL_GLOBALS) do _G[name] = g[name] end
-    if not ok then print("[mnb_coop] friend's skill: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's skill: " .. tostring(err)) end
     log("seat %d used skill %d of %s", o.seat, o.n, tostring(t.name))
 end
 
@@ -652,7 +652,7 @@ local function runHud(o)
     for t, s in pairs(savedSel) do if not mine[t] then t.selected = s end end
     for t in pairs(mine) do t.selected = false end
     for v, s in pairs(savedVeh) do v.selected = s end
-    if not ok then print("[mnb_coop] friend's button: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's button: " .. tostring(err)) end
     log("seat %d pressed %s", o.seat, o.label)
 end
 
@@ -677,7 +677,7 @@ end
 -- one friend's order, run with their wallet (an error is printed, the rest of the queue goes on)
 local function runAs(seat, fn, o)
     local ok, err = wallet.with(seat, fn, o)
-    if not ok then print("[mnb_coop] friend's order: " .. tostring(err)) end
+    if not ok then print("[mnb_coop] teammate's order: " .. tostring(err)) end
 end
 
 -- Host, at the start of its frame (before the game's update).

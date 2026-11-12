@@ -147,7 +147,7 @@ mods.SEVERITY = { [3] = "SERIOUS", [2] = "CHECK", [1] = "FINE" }
 function mods.compare(hostList, friendList, friendName)
     local out = {}
     if type(hostList) ~= "table" or type(friendList) ~= "table" then return out end
-    friendName = friendName or "the friend"
+    friendName = friendName or "the teammate"
     local byId = {}
     for _, m in ipairs(hostList) do byId[m.id] = { host = m } end
     for _, m in ipairs(friendList) do

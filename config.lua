@@ -26,7 +26,7 @@ return {
             default = 30,
             options = { 30, 45, 60, 20, 10 },
             labels = { "30", "45", "60", "20", "10" },
-            description = "How often the host sends the battle to the other players. Higher: friends' screens react sooner (less waiting and smoothing), more upload and a bit more work for the host each frame; it can't go above the host's frame rate. Lower (20, 10) for a slow connection. Movement is smoothed either way.",
+            description = "How often the host sends the battle to the other players. Higher: teammates' screens react sooner (less waiting and smoothing), more upload and a bit more work for the host each frame; it can't go above the host's frame rate. Lower (20, 10) for a slow connection. Movement is smoothed either way.",
         },
         {
             id = "classicDefense",
@@ -40,7 +40,7 @@ return {
             label = "Two copies on one PC: stack the windows",
             type = "checkbox",
             default = true,
-            description = "When a copy joins 127.0.0.1 (both games on this PC), the host's window goes to the top of the screen and the friend's to the bottom, shrunk to fit if the screen is too small for two.",
+            description = "When a copy joins 127.0.0.1 (both games on this PC), the host's window goes to the top of the screen and the teammate's to the bottom, shrunk to fit if the screen is too small for two.",
         },
         {
             id = "netStats",

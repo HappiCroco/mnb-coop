@@ -436,8 +436,8 @@ local coopPauseOption = pause_optionButton
 function pause_optionButton(...)
     if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameState == 0 then
         -- the game's own battle announcement, and its "can't" sound
-        if not pcall(anounceStuff, "Options are closed while friends are in the battle") then
-            mnbCoop.notice("Options are closed while friends are in the battle")
+        if not pcall(anounceStuff, "Options are closed while teammates are in the battle") then
+            mnbCoop.notice("Options are closed while teammates are in the battle")
         end
         pcall(function() poop:clone():play() end)
         return
