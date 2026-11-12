@@ -133,7 +133,7 @@ classic.active = true
 check(fs.load("saveMNB2.lua")().totalMNB2Game == 9, "co-op Classic progress saved on quit")
 classic.active = false
 
--- a friend watching the host's battle never reaches the files: no exit while viewing
+-- a teammate watching the host's battle never reaches the files: no exit while viewing
 classic.enter()
 mnbCoop.battle = { viewing = true }
 menuPage = 1

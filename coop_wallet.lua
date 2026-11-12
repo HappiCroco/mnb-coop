@@ -1,19 +1,19 @@
 -- =============================================================================
 -- CO-OP CLASSIC WALLETS: every player has their own Tactical Points (TP)
 -- Classic spends one pool, player.tp (cap 20 + ribbons, giveTp at mnb2.lua:894). With three
--- players that pool starves everyone, so in a co-op Classic battle with friends connected:
+-- players that pool starves everyone, so in a co-op Classic battle with teammates connected:
 --   * the host's wallet IS player.tp, so all of the game's own code keeps working for him;
---   * a friend's wallet lives here, on the host, one number per seat;
+--   * a teammate's wallet lives here, on the host, one number per seat;
 --   * every income event (giveTp) adds the full amount to EVERY wallet, each with the game's
 --     cap, and is not doubled (solo keeps the old doubled single pool, mnb_coop_main.lua);
---   * when the host replays a friend's order (coop_squad.lua), wallet.with swaps player.tp
---     to that friend's wallet for the call and stores the result back, whatever happens;
---   * the friend's window shows their own number: the host sends it ("wallet" message) and the
---     friend's mirror of `player` has its tp overwritten with it before every frame;
---   * G gives 5 TP to the next player (host decides; the friend only asks).
+--   * when the host replays a teammate's order (coop_squad.lua), wallet.with swaps player.tp
+--     to that teammate's wallet for the call and stores the result back, whatever happens;
+--   * the teammate's window shows their own number: the host sends it ("wallet" message) and the
+--     teammate's mirror of `player` has its tp overwritten with it before every frame;
+--   * G gives 5 TP to the next player (host decides; the teammate only asks).
 -- Direct income that does not go through giveTp (sitrep +5, directive TP Surge, a withdrawal
 -- refund) is added by the game's own code: it goes to the wallet in player.tp at that moment,
--- which is the HOST's unless a friend's order is being replayed right then.
+-- which is the HOST's unless a teammate's order is being replayed right then.
 -- Wallets exist only for one battle (new battle = new troop list); nothing is saved.
 -- =============================================================================
 local net = require("includes/mods/mnb_coop/coop_net")
@@ -25,21 +25,21 @@ wallet.GIVE_KEY = "g"       -- unused by the game (it uses 1-7, H, R, Tab, Space
 local GIVE_GAP = 0.5        -- seconds between two gives from one player
 local DEFAULT_CAP = 20      -- the game's base cap, until giveTp has told us the real one
 
-local wallets = {}          -- friends' wallets: seat -> TP (the host's is player.tp)
-local lastSent = {}         -- seat -> the value that friend was last told
+local wallets = {}          -- teammates' wallets: seat -> TP (the host's is player.tp)
+local lastSent = {}         -- seat -> the value that teammate was last told
 local lastGive = {}         -- seat -> time of their last give
 local token = nil           -- identity of the battle (its troop list) the wallets belong to
 local startTp = 0           -- what everyone began the battle with (the host's TP at the start)
 local cap = DEFAULT_CAP     -- the game's tpMax, as the last giveTp left it
-local swapped = nil         -- { seat, hostTp } while a friend's order runs
+local swapped = nil         -- { seat, hostTp } while a teammate's order runs
 
-wallet.mine = nil           -- friend: my own TP as the host told me
+wallet.mine = nil           -- teammate: my own TP as the host told me
 
 local function inClassic()
     return type(player) == "table" and player.gameType == 1 and player.gameState == 0
 end
 
--- true when wallets rule: hosting friends in a Classic battle
+-- true when wallets rule: hosting teammates in a Classic battle
 function wallet.active()
     return net.role == "host" and net.playerCount() > 1 and inClassic()
 end
@@ -57,7 +57,7 @@ local function notify(seat, text)
 end
 
 -- A new battle starts the wallets over; seats that came or went are handled here too.
--- Never call it while swapped (player.tp would be a friend's).
+-- Never call it while swapped (player.tp would be a teammate's).
 local function ensure()
     if swapped then return end
     local troops = player.deployedTroops
@@ -111,7 +111,7 @@ function wallet.with(seat, fn, ...)
     p.tp = wallets[seat] or 0
     local ok, err = pcall(fn, ...)
     local mineNow = tonumber(p.tp)
-    -- the friend's wallet keeps what is left; the host's comes back as the swap says
+    -- the teammate's wallet keeps what is left; the host's comes back as the swap says
     -- (a giveTp inside the call may have raised it)
     if mineNow then wallets[seat] = mineNow end
     p.tp = swapped.hostTp
@@ -147,7 +147,7 @@ function wallet.giveTp(orig, nbr, ...)
     return result
 end
 
--- Host, every frame: tell each friend their TP when it changed.
+-- Host, every frame: tell each teammate their TP when it changed.
 function wallet.hostUpdate()
     if not wallet.active() then return end
     ensure()
@@ -204,7 +204,7 @@ function wallet.give(from)
     return true
 end
 
--- Host: a friend's message. Only "givetp" (no fields are read: the amount and the
+-- Host: a teammate's message. Only "givetp" (no fields are read: the amount and the
 -- receiver are the host's rules). Returns true if it is ours.
 function wallet.onClientMessage(seat, msg)
     if msg.t ~= "givetp" then return false end
@@ -226,7 +226,7 @@ function wallet.keypressed(key)
     return false
 end
 
--- ---------------------------------------------------------------- friend side
+-- ---------------------------------------------------------------- teammate side
 -- Host → me: my wallet (and maybe a line to show).
 function wallet.onHostMessage(msg)
     local v = tonumber(msg.v)
@@ -236,7 +236,7 @@ function wallet.onHostMessage(msg)
     end
 end
 
--- Friend, every frame while watching: my own TP replaces the host's in the mirror.
+-- Teammate, every frame while watching: my own TP replaces the host's in the mirror.
 function wallet.clientApply()
     if wallet.mine ~= nil and type(player) == "table" and mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing then
         player.tp = wallet.mine

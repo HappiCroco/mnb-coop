@@ -645,7 +645,7 @@ function campaign.arrangeSquad()
     local home = {}
     for pos = 1, 6 do if not going[pos] then home[pos] = roster[pos] end end
 
-    -- each friend's: the top of the roster they sent
+    -- each teammate's: the top of the roster they sent
     local missionSeats = {}
     for _, seat in ipairs(seats) do
         missionSeats[seat] = net.seats[seat] and (net.seats[seat].steamId or net.seats[seat].name) or true
@@ -665,7 +665,7 @@ function campaign.arrangeSquad()
                     n = n + 1
                 end
             end
-            -- a friend whose roster never arrived still gets soldiers for this mission
+            -- a teammate whose roster never arrived still gets soldiers for this mission
             while n < share do
                 local s = asPlayer(p, newSoldier)
                 s.coopNew = 1
@@ -685,7 +685,7 @@ function campaign.arrangeSquad()
     print(string.format("[mnb_coop] mission squad: %d soldiers, %d each for %d player(s)", #slots, share, #seats))
 end
 
--- After a mission (host): own soldiers back on the roster, friends' soldiers sent
+-- After a mission (host): own soldiers back on the roster, teammates' soldiers sent
 -- back to them. Runs when the host leaves the mission-end page (and, if the game
 -- was closed there, before the next mission). Safe to call twice.
 function campaign.settleMission()
@@ -731,7 +731,7 @@ function campaign.settleMission()
         table.insert(troops, pos, s)
     end
 
-    -- friends who are still here (the same person in that seat) get theirs back
+    -- teammates who are still here (the same person in that seat) get theirs back
     for seat, list in pairs(results) do
         local want = p.coopMission.seats and p.coopMission.seats[seat]
         local s = net.seats[seat]
@@ -931,7 +931,7 @@ end
 -- D-DAY KEEPS VETERANS AS THEY ARE
 -- On D-Day the game gives squad slots 1..6 new perks and, on the easier
 -- difficulty, a fresh M1 (preGameAdmin, urb_engine.lua:40220-40283). Fine for
--- rookies; a veteran joining a friend's D-Day, or landing again in a New war,
+-- rookies; a veteran joining a teammate's D-Day, or landing again in a New war,
 -- would lose his for good. Soldiers who already earned XP keep theirs.
 -- =============================================================================
 function campaign.stashVeterans()
@@ -1053,7 +1053,7 @@ end
 
 -- ---------------------------------------------------------------- client: rosters
 -- The top of this player's roster goes to the host (as many as the biggest share a
--- friend can have: 3). Sent on joining, after sorting, and after results.
+-- teammate can have: 3). Sent on joining, after sorting, and after results.
 function campaign.sendRoster()
     if net.role ~= "client" then return end
     campaign.withProfile(function(p)

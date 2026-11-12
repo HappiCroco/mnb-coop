@@ -74,10 +74,10 @@ Game code facts are cited as `file:line` so they can be re-checked after game up
 
 ## Online play: playit.gg (owner has CGNAT)
 - Only the host installs playit (normal install, Program Files, not in the mod folder). One-time: log in from the browser
-  prompt to claim the agent, then create one **UDP** tunnel to the co-op port on localhost. Friends type the playit
+  prompt to claim the agent, then create one **UDP** tunnel to the co-op port on localhost. Teammates type the playit
   address (`name.playit.gg:port`) into JOIN; the lobby has a field where the host pastes it to show/copy it.
-- Not needed for LAN tests. Set it up with the owner when step 2 is tested with a friend outside the house.
-- (v0.9.4) First real test over playit (2026-11-11): the friend got "Connected" (the welcome arrived) but sat at 0/3
+- Not needed for LAN tests. Set it up with the owner when step 2 is tested with a teammate outside the house.
+- (v0.9.4) First real test over playit (2026-11-11): the teammate got "Connected" (the welcome arrived) but sat at 0/3
   players forever, so no lobby update ever arrived. Likely cause: enet sends anything over its 1400-byte MTU as fragments;
   on a tunnel/PPPoE/VPN route those big datagrams can be dropped, so the first big message (the host's avatar, right
   after the welcome) never completes and, channel 0 being reliable and ordered, blocks everything behind it. Fix: no
@@ -126,7 +126,7 @@ list while in menus (all vanilla menu code reads slots 1..6), swapped back befor
 Code: coop_campaign.lua (normalize, arrangeSquad, settleMission at BACK from the mission-end page, onSeatLeft,
 sendRoster on welcome/sort/results, applyPendingResults once back from the battle view, Squad-screen right-drag).
 `campaign.track()` follows `player` because the game reloads it from the save (pause Options, urb_engine.lua:45029).
-Replaces "every friend's soldiers live in the host's save" (that made replacements and changing players janky).
+Replaces "every teammate's soldiers live in the host's save" (that made replacements and changing players janky).
 - **Every player has their own co-op save** on their own PC (`coop/campaign/saveMNB3.lua`, the co-op profile). Its
   squad slots 1..6 ARE that player's roster. The CO-OP CAMPAIGN tile opens the game's main menu on it for anyone
   (Career, Squad...); only the host (or offline) can start a mission, and missions use the host's day/sector.
@@ -153,16 +153,16 @@ coop_lobby.lua (cap line on the co-op page, "New war" with a confirm click). Fou
 now keep their own.
 Players bring experienced soldiers into other people's games and losing them hurts (the "extraction game" feel,
 also told to URB). The aim is no XP farming: nobody grinds easy days to level 11 before really playing.
-- **Soldiers persist** across wars and across friends' games. That is the point of the roster.
+- **Soldiers persist** across wars and across teammates' games. That is the point of the roster.
 - **XP stays on the field** (promotions mid-battle are kept), with a **day cap**: day 1 (D-Day) soldiers can't pass
   level 2, day 2 level 4, day 3 onward no cap (11). Day 1's cap alone kills farming; day 2 is extra. From day 3 the
   game's own XP per hit already shrinks with level: damage/10/level (urb_engine.lua:17482 close combat, 21980 fire).
 - **Home soldiers** keep half the fielded average XP, capped the same way: gains still need soldiers at risk.
-- **A new friend hosts their own day 1** and veterans join them (no reset needed; veterans just earn nothing there).
+- **A new teammate hosts their own day 1** and veterans join them (no reset needed; veterans just earn nothing there).
 - **New war** (co-op page, confirm click): day, sector, career and ribbons start over; the six soldiers stay with
   their levels; the old save is kept as a backup file. Safe because the new war starts under the day 1 cap again.
 - Details to confirm when building: "day" = missions won (`player.gainz`, which also picks the map), not calendar
-  days; the host clamps impossible values from friends (xp > 100, level > 11); the co-op page shows the current
+  days; the host clamps impossible values from teammates (xp > 100, level > 11); the co-op page shows the current
   cap and a "capped" floaty text appears in battle. Open: should the higher difficulty or the Germans' combat skill
   (6 + 1/2 per sector ahead of the calendar + 15 at the higher difficulty, ai.lua:2746-2753) raise the cap?
 - Build: one wrapper on giveXp (level L is reached at 10*(L-1) XP, so a cap of L keeps xp below 10*L).
@@ -205,7 +205,7 @@ What was built differs from the plan below in one way: no hand-kept field list. 
   Never run buttonEngine on a client: its top spawns gameplay (boat explosion, air support, urb_engine.lua:44363-44372).
 - Mission-end pages (4, 5, 10, 14, 15) stay synced after the battle with `view {gs, page}` and the page's animation
   globals (box1..9Timer, play*once, uiFade/dateFade/bgFade/tipText, temp*, mnb2Wave*; clients accept only those
-  name patterns). Friends can't click there: BACK can reset progress or make a new profile (urb_engine.lua:1536-1630).
+  name patterns). Teammates can't click there: BACK can reset progress or make a new profile (urb_engine.lua:1536-1630).
   Page 4 has 6 hard-coded soldier slots (drawFiles.lua:3441-3574) with the four grades below (3575-3674): the
   4x3 mode needs that page redrawn (owner: grades moved right to make room for 12).
 - Client input in battle is blocked except these, own-soldier orders, Esc twice (leave) and Ctrl+F8. All file writes outside `coop/` are dropped
@@ -221,8 +221,8 @@ What was built differs from the plan below in one way: no hand-kept field list. 
   wrapper on the LÖVE Source metatable `play` (reverse map Source → global name built at load), so no 1,300 patches.
 - HUD on clients: TP, wave, squad faces from the snapshot.
 - D-Day boat ride (campaign day 1, `gainz == 1 and landed == 0`): the sea is the window's background colour, which
-  the host's game sets (urb_engine.lua:40176) and a friend's never did; `battle.beforeDraw` sets it from the mirror
-  each frame. The start choices (beachFade -3/-5/-7, diffSelect1..6) are the host's: the friend's frame draws the
+  the host's game sets (urb_engine.lua:40176) and a teammate's never did; `battle.beforeDraw` sets it from the mirror
+  each frame. The start choices (beachFade -3/-5/-7, diffSelect1..6) are the host's: the teammate's frame draws the
   empty step before it plus "Host is choosing the ...". The two-copies canvas clears to the background colour too.
 
 ## Control (clients → host)
@@ -235,39 +235,39 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   and a frame on each face in the face bar.
 - Face drag (right mouse, swap at main.lua:6908-6912) only between two faces of your own group.
 - A soldier whose player isn't connected counts as the host's.
-- Friends: select on the mirror (selection is never synced), click ground → `move {ids, x, y}` in world coords.
+- Teammates: select on the mirror (selection is never synced), click ground → `move {ids, x, y}` in world coords.
   The host validates ownership and **replays the click through the game's own love.mousereleased** with only those
   soldiers selected, `buttons` holding only the found loot and crate buttons, prompts off and `love.mouse` reporting
-  the friend's point, then restores its own selection and globals. No copy of the game's move rules. So a click on
+  the teammate's point, then restores its own selection and globals. No copy of the game's move rules. So a click on
   loot or a crate picks it up the game's way (lootClick/lootCratez/gunCratez/supplyCratez/cargoCratez).
-- Promotions: each player picks for their own soldiers. Friend clicks own face → the game's panel opens on their
+- Promotions: each player picks for their own soldiers. Teammate clicks own face → the game's panel opens on their
   mirror (specID/specDisplay/skillDisplay, like iconClick); a choice sends `promo {id, label}`; the host checks owner
   and the panel's own conditions and runs specClick / perkSelect… Button with specID set, keeping its own panel.
-  The host's iconClick does nothing for a friend's soldier.
-- (v0.7.0) Skills: friend's own face → abilityDisplay panel → `skill {id, n}` → host runs skillClick with specID set.
+  The host's iconClick does nothing for a teammate's soldier.
+- (v0.7.0) Skills: teammate's own face → abilityDisplay panel → `skill {id, n}` → host runs skillClick with specID set.
   Right click → `move {b=2}` replayed as the game's right-button release (items, howitzer/M20).
-  Anything that arms `mousePrompt` for a friend (aimed skills, medic bag, toolbox, intel) is kept per seat on the host
-  (`seatPrompt`), never left in the globals; the friend gets `prompt {p, who}` (their mirror draws the aiming cursor)
+  Anything that arms `mousePrompt` for a teammate (aimed skills, medic bag, toolbox, intel) is kept per seat on the host
+  (`seatPrompt`), never left in the globals; the teammate gets `prompt {p, who}` (their mirror draws the aiming cursor)
   and their next left click fires it through the replay. Backspace → `cancel`.
 - (v0.9.5) Prompts aimed at a soldier (Gear menu guns 44-59/76/99/106, first aid, medic bag...) fire in the game's
   troopClick, from its `troop_<id>` buttons. The replay now adds those buttons (25 px, every standing allied soldier,
   as urb_engine.lua:44413) when a prompt is armed. Gear buttons arm the prompt with no mousePrompter, so a seat
-  prompt with `who == 0` is kept as is (before, `armedPrompt` threw it away at once: friends could buy soldiers but
-  not guns). Map tips (`tipCuez<n>` buttons) are harvested on the friend's window as `tipCuez`.
-- (v0.9.6) Tips are a spawned list (each window has its own copies), so a friend's tip click is HUD_LOCAL: their
+  prompt with `who == 0` is kept as is (before, `armedPrompt` threw it away at once: teammates could buy soldiers but
+  not guns). Map tips (`tipCuez<n>` buttons) are harvested on the teammate's window as `tipCuez`.
+- (v0.9.6) Tips are a spawned list (each window has its own copies), so a teammate's tip click is HUD_LOCAL: their
   window runs tipCuezButton on its own copies (0.9.5 sent it to the host, which faded the host's tip only). The
   hover text comes from clientHover's tip step; the tip's HUD entry no longer swallows it.
-- (v0.9.7) Mission report hover on friends' windows: the game's menu pass (buttonUpdateMenu) never runs there, so
+- (v0.9.7) Mission report hover on teammates' windows: the game's menu pass (buttonUpdateMenu) never runs there, so
   `squad.reportHoverText` rebuilds page 4/5's hover areas in the game's order (Back, then per slot 1..6 the name and
   the new awards, urb_engine.lua:8235-8303) and clientHover runs in the debrief too.
-- (v0.9.7) Friends leave the mission report when they like (owner: "be able to back whenever they want and not wait
+- (v0.9.7) Teammates leave the mission report when they like (owner: "be able to back whenever they want and not wait
   for the host"): Back on the report (32,686 60x30) → `battle.leaveReport` → stopView, back to the lobby, still in
   the session. The host's later report snaps are ignored (no view); its next battle's `bfull` brings them in again;
   their results arrive when the host leaves its report and are applied at once (not watching).
 - (v0.9.7) QuarterMaster 1.8 (2026-11-12) has its own input layer (`QM.Input.handle*` in love.keypressed/keyreleased/
   mousepressed/mousereleased) and installs it twice: on module load and from a patch in main.lua, each time keeping
   love.* as its `orig*` unless love.* is already its handler. Our plain love.* swap in between made QM → ours → QM …
-  (a friend's game: stack overflow at main.lua:3492 'origMousePressed' on the first click). `coop_qminput.wrap`: if
+  (a teammate's game: stack overflow at main.lua:3492 'origMousePressed' on the first click). `coop_qminput.wrap`: if
   QM's handler is in love.*, ours goes into `QM.Input.orig*` (behind it) and love.* stays QM's; otherwise a plain
   wrap (QM 1.4). Test: tests/qmtest.
 - (v0.9.8) GMenu is retired (Gamiseus/MnB-Mods 4edc767, 2026-11-09): QM 1.8 has the menu built in (`QM.Menu`, same
@@ -289,19 +289,19 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   far-right retreats (≥ 11000, set outside the AIs too) become x −700. Kept right: Goliaths (tankAI blows them up
   "behind our lines" by x), Wespe/Nebel/howitzer, side-rolling carts. Tests: defensetest.
 - (v0.9.8) READY is enforced: the host's starts (menu_goButton, menu_classicButton, a fresh preMNB2Admin, the Classic
-  tile) wait for every friend (`net.readyToStart`, pop-up names who), and a started battle resets everyone. A friend's
-  click shows at once (`pendingReady`) until the host's lobby agrees. Host pause rides in `view.pz`: friends see a
+  tile) wait for every teammate (`net.readyToStart`, pop-up names who), and a started battle resets everyone. A teammate's
+  click shows at once (`pendingReady`) until the host's lobby agrees. Host pause rides in `view.pz`: teammates see a
   PAUSED banner. Each card shows where that player is (`net.WHERE`: lobby, campaign, classic, battle, report, menu;
-  `lobby.updatePresence` sends it on change and every 4 s). Friends' CO-OP CLASSIC tile is drawn closed.
+  `lobby.updatePresence` sends it on change and every 4 s). Teammates' CO-OP CLASSIC tile is drawn closed.
 - (v0.9.8) Mod check (coop_mods.lua, owner: "say which mod is missing on which side and how serious"): each machine
   lists `<game>/Mods` (LuaJIT ffi FindFirstFileA, no console window; mod.json id/name/version/"coop", code = qm.toml
   has patches or a top-level .lua; skips qm, mnb_coop, `_`/`.` folders, `"enabled": false`, folders without
-  mod.json/qm.toml; at most 64). Sent in hello / welcome, cleaned on receipt. Severity: pictures-only or friend-only
+  mod.json/qm.toml; at most 64). Sent in hello / welcome, cleaned on receipt. Severity: pictures-only or teammate-only
   code or `"coop": "host"|"any"` → FINE; unmarked code only on the host or code version differs → CHECK; a `"both"`
   mod missing or in another version → SERIOUS. Pop-up at join when CHECK or worse, "!" on the card, the list in the
-  card's tooltip (host: each friend; friend: the host's card). README explains it for players. Test: modtest.
+  card's tooltip (host: each teammate; teammate: the host's card). README explains it for players. Test: modtest.
 - (v0.9.9) Co-op Classic rules (12-soldier size control, double TP) apply to every co-op defense battle, solo too
-  (`coopClassicRules`: defense.on, or Classic with friends); they were friend-only. Wave doubling stays friend-only.
+  (`coopClassicRules`: defense.on, or Classic with teammates); they were teammate-only. Wave doubling stays teammate-only.
 - (v0.9.9) Falling back in the defense goes to the radar (owner: "they should retreat to the radio"): alliedRetreat
   (x − 100..600) is wrapped and the panic run (ai.lua:5723, x − 1280) patched to call `defense.panicked`; both pick a
   spot ~75 px from the radar on the soldier's own side. Tactical withdrawals still leave.
@@ -338,12 +338,12 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - (v0.9.11) READY ROOM (owner, 2026-11-12: "the ready appears when the host chooses the game mode... everyone on the
   same screen... you click ready, and then the host clicks start"). `lobby.gate(title, retry)` replaces the old
   `readyToStart` gates in menu_goButton and preMNB2Admin (now every call, a carried-on Classic battle too); picking a
-  Classic mode (menu_classicButton, the CO-OP CLASSIC tile) is free. If a friend isn't ready, the host goes to the room
+  Classic mode (menu_classicButton, the CO-OP CLASSIC tile) is free. If a teammate isn't ready, the host goes to the room
   page with the start saved as a closure, and `net.stage` (the title) rides on the lobby broadcast; `lobby.updateRoom`
-  (every frame) pulls friends who aren't watching a battle into the room and back to the lobby when the stage goes.
+  (every frame) pulls teammates who aren't watching a battle into the room and back to the lobby when the stage goes.
   START (all ready) goes back to the page the start came from and replays it; Cancel goes back and resets READY.
   Known: the para button spends its credit before preMNB2Admin, so cancelling the room after it costs that credit.
-  Tests: cooptest (stage sync), hubtest (gate, start, cancel, a friend pulled in and out).
+  Tests: cooptest (stage sync), hubtest (gate, start, cancel, a teammate pulled in and out).
 - (v0.9.11) Co-op ribbons (`coop_ribbons.lua`, ids from 201): a registry that defines `_G["rib<id>"]` (png from the mod's
   `sprites/` via io.open; a flat fallback if missing), `ribName_<id>`, `ribDesc_<id>`, so the game's ribbon screen
   (draws every owned ribbon in player.ribs order, 72 slots), tooltip, hasRib and announceRibbon just work. Only awarded in
@@ -352,17 +352,17 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   put back after the game's clamp in the `giveTp` wrap. 202 Hold the Line (wave 50, mnb2Miss 0): award works, the
   free-riflemen effect is a TODO. 203 Brothers in Arms (25 revives, `player.coopStats.revives`): stub until the revive
   hook exists. Art: `tools/ribbons` (LÖVE program, drawn 4x and averaged down, fixed seed). Test: ribtest.
-- (v0.9.11) WALLETS (`coop_wallet.lua`): in a co-op Classic battle with friends each player has their own TP (a shared
-  cap of 20 starved three players). The host's wallet is `player.tp`; friends' are host-side numbers per seat, started
+- (v0.9.11) WALLETS (`coop_wallet.lua`): in a co-op Classic battle with teammates each player has their own TP (a shared
+  cap of 20 starved three players). The host's wallet is `player.tp`; teammates' are host-side numbers per seat, started
   at the host's TP when the battle begins (new troop list = reset; never saved). Every `giveTp` adds its FULL amount
   to every wallet, each capped at the game's `tpMax` (read after the game's own giveTp ran), not doubled any more;
-  solo (a solo defense) keeps one pool, doubled. A friend's replayed order (`move`, `hud`, `skill` in
+  solo (a solo defense) keeps one pool, doubled. A teammate's replayed order (`move`, `hud`, `skill` in
   `squad.hostRunOrders`, so every armed prompt, bought unit, strike and gun) runs in `wallet.with(seat, fn)`: their
   wallet is swapped into `player.tp` for the call and stored back, the host's put back even on an error. Direct income
   the game adds to `player.tp` itself (sitrep +5, directive TP Surge, withdrawal refund) lands in whichever wallet is
-  in `player.tp` then: the host's, except inside a replayed order. Friends see their own TP: the host sends `wallet {v}`
+  in `player.tp` then: the host's, except inside a replayed order. Teammates see their own TP: the host sends `wallet {v}`
   on change and the mirror's `player.tp` is overwritten every frame (`wallet.clientApply`); the mirror never reaches
-  saves. G gives 5 TP to the next player (round the table): the friend sends `givetp` with no fields, the host decides
+  saves. G gives 5 TP to the next player (round the table): the teammate sends `givetp` with no fields, the host decides
   amount and receiver, clamps to what the giver has and what fits the receiver's cap, one give per 0.5 s per seat.
   Test: ordertest.
 - (v0.9.11) Wave pace: the next Classic wave comes at `deployTimer > 60 + totalAxis()` (urb_engine.lua:6084). The
@@ -371,20 +371,20 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   (Wallets are capped at tpMax + `ribbons.capBonus()`, so Two-Front War's +2 reaches every wallet.)
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
-  leaves the battle) is refused while friends are in.
+  leaves the battle) is refused while teammates are in.
 - (v0.7.0) Sound distance: the host notes the gunScale/stepScale/... call before each setVolume (place + factor);
-  friends recompute the loudness from their own camera.
-- (v0.8.0) Face drags for friends: right-drag own face onto own face → `swap {a, b}` → host swaps the two entries.
-- (v0.8.0) HUD buttons for friends (command abilities `playerSkill_`, Classic mnb2 menus, trench buttons,
-  directives, broom). The friend's window runs the game's buttonEngine on the mirror (soundCpt pushed down so no
+  teammates recompute the loudness from their own camera.
+- (v0.8.0) Face drags for teammates: right-drag own face onto own face → `swap {a, b}` → host swaps the two entries.
+- (v0.8.0) HUD buttons for teammates (command abilities `playerSkill_`, Classic mnb2 menus, trench buttons,
+  directives, broom). The teammate's window runs the game's buttonEngine on the mirror (soundCpt pushed down so no
   chatter/ambient spawns) to get the buttons and tooltips. Menu pages (mnb2Reinf…mnb2Back, directiveMenu) open
   locally; `mnb2MenuDisplay` and `player.showDirective` (now LOCAL in the sync) are each player's own. Other
-  buttons → `hud {label, x, y, cx, cy, ids, menu}`; the host whitelists the label, then swaps in the friend's
+  buttons → `hud {label, x, y, cx, cy, ids, menu}`; the host whitelists the label, then swaps in the teammate's
   selection, menu page, camera (player.screenx/y) and mouse for one Button.click, so screen and world buttons
-  both land right; prompts go to `seatPrompt`; the friend gets `ui {m}` (their menu page after).
+  both land right; prompts go to `seatPrompt`; the teammate gets `ui {m}` (their menu page after).
 - (v0.8.0) Classic ownership (owner's earlier choices: TP one shared pool; recruits belong to the recruiter):
-  `squad.active()` is also on in a Classic battle hosted with friends; the starting soldiers are dealt in turn
-  (host first) once per battle (`coopOwner`); soldiers a friend's HUD click brings in get their `coopOwner`; the
+  `squad.active()` is also on in a Classic battle hosted with teammates; the starting soldiers are dealt in turn
+  (host first) once per battle (`coopOwner`); soldiers a teammate's HUD click brings in get their `coopOwner`; the
   host keeps the game's Ctrl groups. Not yet: delayed arrivals (paradrops landing later) count as the host's.
 - Kept on purpose: the shared voice-line throttle (spamTimer). Every voice plays on every machine, so one throttle
   is what keeps the shared soundscape from stacking voices; per-player timers would double the chatter.
@@ -397,12 +397,12 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - Layout (after preMNB2Admin): squad in a ring around a radar at the map's middle (endLine/2, y 360), camera there.
   The radar uses its own placeable names `coopRadar`/`coopRadarTop` (pictures = the game's radarBase/radarTop) so
   the game's radar rules (alliedEw cancelling support, wave-end reveal, capture, destruction) don't touch it.
-- Waves with friends (owner, 2026-11-11: "make it double"): every German infantryman a wave makes stays right and
+- Waves with teammates (owner, 2026-11-11: "make it double"): every German infantryman a wave makes stays right and
   gets a twin mirrored to the left (copy of his tables, new random id), so each side faces the full wave. Solo
   defense keeps the split below.
 - German support, two fronts (`defense.frontLines()` = westmost, eastmost friendly soldier; `mirrorX` mirrors a
   point around their middle, so "front + 1000" east becomes "front - 1000" west): fjDrop paratroopers drop on both
-  fronts with friends (alternate solo); germanArtyPrefire / preAirBurst aimed exactly at alliedFrontLine() alternate
+  fronts with teammates (alternate solo); germanArtyPrefire / preAirBurst aimed exactly at alliedFrontLine() alternate
   fronts (strikes called on a spot stay put). Strafes (axisStrafe) stay east: the plane flies right to left.
 - Waves solo: spawnMNB2Wave wrapped; every other German it makes is mirrored to the left flank (same distance west of the
   westmost player as the game put him east of the eastmost). `coopSide` "L"/"R" on every German; any German that
@@ -426,7 +426,7 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   defense.update: any German appearing without a side inside the zone moves to its side's edge. Loading a battle
   under way gives the Germans already there a side first, so they're not moved.
 - Ownership: the Classic dealing from v0.8.0 (start soldiers in turn, recruits = recruiter's; TP was shared, own wallets since v0.9.11).
-- (v0.9.3) TP income doubled in co-op Classic with friends (owner: the shared pool was too tight for two fronts):
+- (v0.9.3) TP income doubled in co-op Classic with teammates (owner: the shared pool was too tight for two fronts):
   `giveTp` wrapped (mnb_coop_main.lua), host only. The cap (20 + ribbons) isn't raised, so spend it or lose it.
   The radar can't be destroyed: the game's `destruction()` (particlesSystem.lua:7028) removes placeables by exact
   name only, and nothing else removes `coopRadar`.
@@ -442,13 +442,13 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   layout; it's a defense again if its `coopRadar` is there. Tactical withdrawal in the defense leaves by the nearest
   top/bottom edge (patch on ai.lua:1690 → defense.withdraw), then the game's own take-off at x < 100 (refund chance
   kept). Left Germans sidestep fire like the game's moveForward. Fixed an `a and b or c` trap in wrapAdvance.
-- (v0.9.1, review fixes) Friends' moves no longer close the host's open promotion/skill panel (panel globals saved
+- (v0.9.1, review fixes) Teammates' moves no longer close the host's open promotion/skill panel (panel globals saved
   in the replay). Battle-ending or whole-team HUD buttons (mnb2Retreat, trenchRetreatz, trenchUp, trenchRetreat) are
   host-only. Up to 40 soldiers per order (Classic armies).
 - (v0.9.1) Size control (Classic's big-squad punishment, urb_engine.lua:6022-6026) in a co-op Classic battle
-  with friends: starts above 12 soldiers for the whole team instead of 6, and its ten-times step above 24
+  with teammates: starts above 12 soldiers for the whole team instead of 6, and its ten-times step above 24
   instead of 12 (owner: "make it 12", three each). `coopSizeLimit()` in mnb_coop_main.lua; solo stays 6/12.
-- (v0.9.1) Friends' windows start the Classic background loop themselves (bgSound / cologne / night): the host
+- (v0.9.1) Teammates' windows start the Classic background loop themselves (bgSound / cologne / night): the host
   starts it in preMNB2Admin, before the sync runs, so it never reached them.
 - Ideas for later: vehicles from the left too (needs the vehicle rotation rules mirrored), a points-lost counter of
   its own, radar sprite of our own.
@@ -468,29 +468,29 @@ strikes, message/byte rates), ownership checks on every order, host-only buttons
 image paths checked, debrief globals by name pattern, every client draw/update in pcall.
 Fixed in v0.9.7:
 - **HUD buttons:** a label only names a `<label>Button` function. The host now runs the game's own HUD pass for the
-  friend's menu page, selection and camera and refuses a label that isn't on their screen (any mnb2*/trench* Button
+  teammate's menu page, selection and camera and refuses a label that isn't on their screen (any mnb2*/trench* Button
   function could be called before, e.g. main-menu ones mid-battle).
-- **Soldiers from the network** (rosters to the host, results to a friend): fields the game turns into sprite/text
+- **Soldiers from the network** (rosters to the host, results to a teammate): fields the game turns into sprite/text
   names must name something loaded (spec, state, face parts, perks 1..21, nextPerk, award icons), the weapon is
   rebuilt from its tag by weaponCreator (no crafted damage/range/rof), numbers finite (|v| <= 1e9), strings <= 64
   (names 40). A bad value used to break the drawing on every machine showing that soldier.
 - **Avatars:** the PNG header's pixel size must be <= 512x512 before decoding (a few KB can claim 30000x30000).
-- **Coordinates** from friends: finite and clamped to the map (the codec accepts "inf").
+- **Coordinates** from teammates: finite and clamped to the map (the codec accepts "inf").
 - **Byte guard:** big packets sent in one piece count their bytes (v0.9.6).
 Accepted, low risk: a hostile host can still send huge (bounded: 64 MB, 4M items) or zlib-bomb snapshots to the
-friends who chose to join it, and set `temp*`/`box*Timer`-style debrief globals (drawing errors are caught and
-shown; the friend's own globals come back when they leave).
+teammates who chose to join it, and set `temp*`/`box*Timer`-style debrief globals (drawing errors are caught and
+shown; the teammate's own globals come back when they leave).
 
 ## Next: catch-up pause + automatic rate (agreed 2026-11-12, for 0.9.8)
-1. Friends report the last applied update number a few times a second (`ack {n}`); the host knows each friend's
+1. Teammates report the last applied update number a few times a second (`ack {n}`); the host knows each teammate's
    backlog in seconds (includes the queue, unlike ping).
 2. > ~0.5 s behind: the host steps `syncRate` down 60 → 45 → 30 → 20, back up when settled (one shared stream, so
-   it follows the slowest friend).
+   it follows the slowest teammate).
 3. > ~2 s behind: the host pauses with the game's own pause, "Waiting for <name> to catch up...", and resumes when
    they're current.
 4. Never stuck: after ~15 s behind, the pause lifts with a pop-up ("<name>'s connection can't keep up").
-Later, 0.10.0: battle updates that skip lost packets (unreliable, acked deltas / per-friend baselines) instead of
-reliable-in-order, which stalls everything behind one lost packet on a lossy line; per-friend rates come with it.
+Later, 0.10.0: battle updates that skip lost packets (unreliable, acked deltas / per-teammate baselines) instead of
+reliable-in-order, which stalls everything behind one lost packet on a lossy line; per-teammate rates come with it.
 
 ## Scope and phases
 1. **Lobby + connection** (built 2026-11-11, v0.2.0; headless tests pass, not yet tried in-game). Main-menu entry is
@@ -502,4 +502,4 @@ reliable-in-order, which stalls everything behind one lost packet on a lossy lin
 
 ## Testing
 - Net core and codec: headless with `lovec` (two processes on localhost).
-- Game behaviour: two machines, or two copies of the game on one PC (Steam may refuse a second instance; then a friend).
+- Game behaviour: two machines, or two copies of the game on one PC (Steam may refuse a second instance; then a teammate).

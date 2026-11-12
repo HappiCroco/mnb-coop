@@ -100,7 +100,7 @@ end
 check(left == 4 and right == 4, "solo: the full wave on each side (" .. left .. " left, " .. right .. " right)")
 local gL, gR = T[n0 + 5], T[n0 + 1]
 
--- with friends: every German gets a twin on the left (double the attack)
+-- with teammates: every German gets a twin on the left (double the attack)
 local net = require("includes/mods/mnb_coop/coop_net")
 net.seats = { { name = "Host" }, { name = "Ann" } }
 local n2 = #T
@@ -110,7 +110,7 @@ for i = n2 + 1, #T do
   if T[i].coopSide == "L" then L2 = L2 + 1 elseif T[i].coopSide == "R" then R2 = R2 + 1 end
   ids[T[i]] = true
 end
-check(L2 == 4 and R2 == 4, "with friends: the full wave on each side (" .. L2 .. " left, " .. R2 .. " right)")
+check(L2 == 4 and R2 == 4, "with teammates: the full wave on each side (" .. L2 .. " left, " .. R2 .. " right)")
 local twin, orig = T[#T], T[n2 + 4] -- originals are n2+1..n2+4, their twins come after, in order
 check(twin.coopSide == "L" and twin.x <= 6300 - defense.SPAWN_CLEAR and twin.y == orig.y, "a twin mirrored to the left at the same height")
 -- a wave the game puts far out stays where it is (and its twin mirrors it)
@@ -120,7 +120,7 @@ farWave()
 check(T[n3 + 1].x == hi + 3000 and T[n3 + 2].x == lo - 3000, "a far wave isn't moved; its twin mirrors it")
 for i = #T, n3 + 1, -1 do table.remove(T, i) end
 check(twin ~= orig and twin.weapon ~= orig.weapon or orig.weapon == nil, "the twin has his own tables")
--- special waves: whole from one side, alternating, never doubled (even with friends)
+-- special waves: whole from one side, alternating, never doubled (even with teammates)
 local special = defense.wrapSpecial(function()
   for k = 1, 3 do table.insert(player.deployedTroops, troop("axis", hi + 3000, 100 + k * 100)) end
 end)
@@ -134,7 +134,7 @@ local n4 = #T
 defense.specialFlip = 0
 inWave()
 local sl, sr = sides(n4 + 1)
-check(sl + sr == 3 and (sl == 0 or sr == 0), "with friends: a special wave comes from one side, not doubled (" .. sl .. " left, " .. sr .. " right)")
+check(sl + sr == 3 and (sl == 0 or sr == 0), "with teammates: a special wave comes from one side, not doubled (" .. sl .. " left, " .. sr .. " right)")
 local n5 = #T
 inWave()
 local sl2, sr2 = sides(n5 + 1)
@@ -238,7 +238,7 @@ check(#drops == 2 and drops[1] == hi2 + 3000 and drops[2] == lo2 - 3000, "solo: 
 net.seats = { { name = "Host" }, { name = "Ann" } }
 drops = {}
 fj(hi2 + 3000, 360)
-check(#drops == 2 and drops[1] == hi2 + 3000 and drops[2] == lo2 - 3000, "with friends: a drop on each front")
+check(#drops == 2 and drops[1] == hi2 + 3000 and drops[2] == lo2 - 3000, "with teammates: a drop on each front")
 drops = {}
 fj(hi2, 350) -- urb_engine.lua:42718 drops right on the front line
 check(drops[1] == dropEdge and drops[2] == 12600 - dropEdge, "a drop on the front line lands past the clear zone, both sides (" .. drops[1] .. ", " .. drops[2] .. ")")

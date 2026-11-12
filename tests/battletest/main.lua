@@ -187,12 +187,12 @@ local rmsg = T.capture(st) rmsg.t = "snap"
 send(rmsg)
 local mb = battle._mirror.buildings[1]
 check(mb and mb.roofAlpha == 255 and mb.fading == 0, "new building arrives with its roof fields")
-mb.roofAlpha, mb.fading = 25, 3 -- the friend hovers it
+mb.roofAlpha, mb.fading = 25, 3 -- the teammate hovers it
 hostP.buildings[1].roofAlpha, hostP.buildings[1].fading, hostP.buildings[1].hp = 100, 2, 9 -- the host hovers too
 player = hostP
 rmsg = T.capture(st) rmsg.t = "snap"
 send(rmsg)
-check(mb.roofAlpha == 25 and mb.fading == 3 and mb.hp == 9, "friend's roof stays his own, other fields still sync")
+check(mb.roofAlpha == 25 and mb.fading == 3 and mb.hp == 9, "teammate's roof stays his own, other fields still sync")
 
 -- spawn effects
 player = battle._mirror
@@ -242,14 +242,14 @@ battle.noteDrawError("includes/drawFiles.lua:56: bad argument #1 to 'draw'\nstac
 check(T.getClient().drawError == "includes/drawFiles.lua:56: bad argument #1 to 'draw'", "draw error noted")
 battle.noteDrawError(nil)
 check(T.getClient().drawError == nil, "draw error cleared when a frame draws")
--- the D-Day boat ride: sea colour, and the host's start choices hidden from the friend
+-- the D-Day boat ride: sea colour, and the host's start choices hidden from the teammate
 local mp = battle._mirror
 player = mp
 local saved = { mp.gainz, mp.landed, mp.beachFade, mp.gameState }
 mp.gainz, mp.landed, mp.beachFade, mp.gameState = 1, 0, -3, 0
 local restore = battle.beforeDraw()
 local r, g, b = love.graphics.getBackgroundColor()
-check(math.abs(r - 28 / 255) < 0.01 and math.abs(b - 49 / 255) < 0.01, "friend's sea is the host's water colour, not black")
+check(math.abs(r - 28 / 255) < 0.01 and math.abs(b - 49 / 255) < 0.01, "teammate's sea is the host's water colour, not black")
 check(mp.beachFade == -2 and T.getClient().hostChoosing == "difficulty", "difficulty buttons hidden; the host is choosing")
 restore()
 check(mp.beachFade == -3, "the mirrored step is put back after drawing")
@@ -261,14 +261,14 @@ r = love.graphics.getBackgroundColor()
 check(r == 0, "landed: background black again")
 mp.gainz, mp.landed, mp.beachFade, mp.gameState = saved[1], saved[2], saved[3], saved[4]
 
--- the host pauses (Esc): friends get a PAUSED banner; their own game isn't paused
+-- the host pauses (Esc): teammates get a PAUSED banner; their own game isn't paused
 player = hostP
 pause = 1
 local pmsg = T.capture(st)
 pmsg.t, pmsg.view = "snap", T.viewState()
-pause = 0 -- the friend's own pause, before the update arrives
+pause = 0 -- the teammate's own pause, before the update arrives
 send(pmsg)
-check(T.getClient().hostPaused == true and pause == 0, "host paused: the friend's window shows it, their own game keeps running")
+check(T.getClient().hostPaused == true and pause == 0, "host paused: the teammate's window shows it, their own game keeps running")
 player = hostP
 local umsg = T.capture(st)
 umsg.t, umsg.view = "snap", T.viewState()
@@ -287,19 +287,19 @@ dmsg.g.love = 5 -- a forged name must be refused by the client
 menuPage = 0
 box3Timer = 0
 send(dmsg)
-check(menuPage == 4 and battle._mirror.gameState == 1 and battle.inDebrief(), "friend shows the host's mission-end page")
+check(menuPage == 4 and battle._mirror.gameState == 1 and battle.inDebrief(), "teammate shows the host's mission-end page")
 check(box3Timer == 2.5 and tempMVPName == "Pvt. Test", "debrief timers arrive")
 check(type(love) == "table", "a forged global name is refused")
 hostP.gameState = 0
 
--- the friend leaves the report on their own (Back), before the host does
+-- the teammate leaves the report on their own (Back), before the host does
 battle.leaveReport()
-check(not battle.viewing and player == clientReal, "friend left the mission report: back in their own game, no waiting")
+check(not battle.viewing and player == clientReal, "teammate left the mission report: back in their own game, no waiting")
 send({ t = "snap", players = {} }) -- the host still on its report: ignored
 check(not battle.viewing, "the host's report updates don't pull them back")
 -- end of battle restores the real player (here: already done; must stay harmless)
 send({ t = "bend" })
-check(box3Timer == 0, "friend's own timer global restored after leaving")
+check(box3Timer == 0, "teammate's own timer global restored after leaving")
 check(bg == hostBg, "client's own background global restored")
 love.filesystem.remove("testbg.png")
 check(not battle.viewing and player == clientReal and player.gameState == 1, "real player restored after bend")
@@ -322,7 +322,7 @@ if okSd then
   check(#Hs.snd == 3 and Hs.snd[1].n == "testBeep" and Hs.snd[1].v == 0.5, "sound recorded by global name")
   check(Hs.snd[2].n == "testLoop" and Hs.snd[2].i and Hs.snd[3].s == Hs.snd[2].i, "loop start/stop recorded")
   check(Hs.snd[1].k == nil, "a sound with a plain volume has no place")
-  -- sound distance: a footstep near the host's camera, far from the friend's
+  -- sound distance: a footstep near the host's camera, far from the teammate's
   local savedP = player
   player = { screenx = 0, screeny = 0 }
   Hs = { snd = {}, pend = {} }
@@ -334,10 +334,10 @@ if okSd then
   local e = Hs.snd[1]
   check(e.k == "s" and e.x == 700 and e.y == 400 and math.abs(e.f - 1 / 2.3) < 0.01, "footstep placed with its factor")
   check(Hs.snd[2].k == "s" and Hs.snd[2].v == 0, "far footstep placed even though the host hears nothing")
-  player = { screenx = 8000, screeny = 0 } -- the friend's camera is far right
-  check(battle.placedVolume(e) < 0.01, "the friend hears the host's footstep faintly or not at all")
+  player = { screenx = 8000, screeny = 0 } -- the teammate's camera is far right
+  check(battle.placedVolume(e) < 0.01, "the teammate hears the host's footstep faintly or not at all")
   local v2 = battle.placedVolume(Hs.snd[2])
-  check(v2 and math.abs(v2 - 1 / 2.3) < 0.01, "the friend hears his own side's footstep at full loudness")
+  check(v2 and math.abs(v2 - 1 / 2.3) < 0.01, "the teammate hears his own side's footstep at full loudness")
   player = savedP
 else
   print("no audio in this LOVE build, sound test skipped")

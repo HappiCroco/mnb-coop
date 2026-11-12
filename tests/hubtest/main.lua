@@ -80,7 +80,7 @@ net.seats = { { name = "Host" }, { name = "Bob", ready = false } }
 menuPage = 77 -- the host's mode select
 local started = 0
 local function start() started = started + 1 end
-check(not lobby.gate("CO-OP CLASSIC", start) and menuPage == lobby.getRoomPage() and net.stage == "CO-OP CLASSIC", "a friend not ready: the ready room opens")
+check(not lobby.gate("CO-OP CLASSIC", start) and menuPage == lobby.getRoomPage() and net.stage == "CO-OP CLASSIC", "a teammate not ready: the ready room opens")
 buttons = {}
 lobby.registerButtons()
 at = {}
@@ -98,22 +98,22 @@ net.seats[2].ready = false
 lobby.gate("CO-OP CAMPAIGN", start)
 coopRoomCancelButton()
 check(started == 1 and menuPage == 77 and net.stage == nil, "Cancel goes back without starting")
--- a friend follows the host's stage
+-- a teammate follows the host's stage
 net.role, net.mySeat = "client", 2
 net.stage = "CO-OP CLASSIC"
 menuPage = lobby.getPage()
 lobby.updateRoom()
-check(menuPage == lobby.getRoomPage(), "a friend is pulled into the ready room")
+check(menuPage == lobby.getRoomPage(), "a teammate is pulled into the ready room")
 buttons = {}
 lobby.registerButtons()
 at = {}
 for _, b in ipairs(buttons) do at[b.label] = b end
-check(at.coopRoomReady and not at.coopRoomStart, "friend: READY, no START")
+check(at.coopRoomReady and not at.coopRoomStart, "teammate: READY, no START")
 ok, err = pcall(lobby.draw)
-check(ok, "ready room draws (friend): " .. tostring(err))
+check(ok, "ready room draws (teammate): " .. tostring(err))
 net.stage = nil
 lobby.updateRoom()
-check(menuPage == lobby.getPage(), "the room closes: the friend is back in the lobby")
+check(menuPage == lobby.getPage(), "the room closes: the teammate is back in the lobby")
 net.role, net.mySeat, net.seats = "offline", nil, {}
 print(("%d passed, %d failed"):format(passes, fails))
 love.event.quit(fails == 0 and 0 or 1)

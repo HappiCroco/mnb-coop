@@ -1,4 +1,4 @@
--- Headless test of coop_squad.lua: ownership, host rules, friends' orders (moves, loot, right click,
+-- Headless test of coop_squad.lua: ownership, host rules, teammates' orders (moves, loot, right click,
 -- promotions, skills, prompts, H/Alt, HUD buttons, face swaps), client input, Classic dealing.
 local MOD = os.getenv("COOP_DIR")
 for _, n in ipairs({ "coop_codec", "coop_profile", "coop_mods", "coop_net", "coop_wallet", "coop_squad" }) do
@@ -48,7 +48,7 @@ for _, t in ipairs(player.deployedTroops) do t.selected = true end
 squad.hostAfterButtonEngine()
 local T = player.deployedTroops
 check(T[1].shortcut == 1 and T[2].shortcut == 2 and T[3].shortcut == 0 and T[5].shortcut == 0, "host keys 1,2 = host's soldiers")
-check(T[1].selected and not T[3].selected and not T[6].selected, "host can't keep friends' soldiers selected")
+check(T[1].selected and not T[3].selected and not T[6].selected, "host can't keep teammates' soldiers selected")
 -- Bob leaves: his soldiers become the host's
 net.seats[3] = nil
 squad.hostAfterButtonEngine()
@@ -59,7 +59,7 @@ squad.hostAfterButtonEngine()
 -- drag: host may not drop onto Ann's face
 mouseOverIconId, mouseDropIconId = 1, 3
 squad.hostBeforeRelease(2)
-check(mouseDropIconId == 0, "drop onto a friend's face refused")
+check(mouseDropIconId == 0, "drop onto a teammate's face refused")
 mouseOverIconId, mouseDropIconId = 1, 2
 squad.hostBeforeRelease(2)
 check(mouseDropIconId == 2, "drop inside own group allowed")
@@ -73,7 +73,7 @@ check(squad.onClientMessage(2, { t = "fly" }) == false, "unknown order not under
 squad.hostRunOrders()
 check(T[3].targetx == 1500 and T[4].targetx == 1500 and T[3].targety == 300, "Ann's soldiers move to her point")
 check(T[1].targetx == 10 and T[2].targetx == 20 and T[7].targetx == nil, "host's soldiers and the enemy don't move")
-check(T[1].selected == true, "host's own selection survives a friend's order")
+check(T[1].selected == true, "host's own selection survives a teammate's order")
 check(seenGlobals and #seenGlobals.buttons == 0 and seenGlobals.mousePrompt == 0, "replay runs with no HUD buttons or prompts")
 check(seenGlobals.selX == 500 and seenGlobals.selY == 300, "replay clicks at the right screen point")
 check(buttons[1] == "hostButtons" and mousePrompt == 5 and selectionX == 7 and selecting == true, "host's globals restored")
@@ -92,7 +92,7 @@ local sent = {}
 net.sendToHost = function(msg) sent[#sent + 1] = msg end
 mnbCoop.battle.viewing = true
 net.role, net.mySeat = "client", 2
-mousePrompt = 0 -- the friend's own machine: nothing armed
+mousePrompt = 0 -- the teammate's own machine: nothing armed
 for _, t in ipairs(T) do t.selected = nil end
 squad.clientKeypressed("1")
 check(T[3].selected and not T[4].selected and not T[1].selected, "client key 1 = Ann's first soldier")
@@ -247,16 +247,16 @@ squad.onClientMessage(2, { t = "promo", id = 4, label = "promoSelect" })
 squad.onClientMessage(2, { t = "promo", id = 4, label = "weaponSelect" })    -- weapon maxed
 squad.onClientMessage(2, { t = "promo", id = 4, label = "evilSelect" })      -- not a panel button
 squad.hostRunOrders()
-check(#specced == 1 and specced[1].id == 3 and specced[1].spec == "medic", "friend's spec choice runs the game's specClick for her soldier")
-check(#promoted == 1 and promoted[1] == 4, "friend's rank choice runs promoSelectButton")
+check(#specced == 1 and specced[1].id == 3 and specced[1].spec == "medic", "teammate's spec choice runs the game's specClick for her soldier")
+check(#promoted == 1 and promoted[1] == 4, "teammate's rank choice runs promoSelectButton")
 check(specID == 1 and specDisplay == 1, "host's own panel left as it was")
--- host face clicks: own soldier opens, a friend's soldier doesn't
+-- host face clicks: own soldier opens, a teammate's soldier doesn't
 local opened = {}
 local wrapped = squad.wrapIconClick(function(id) opened[#opened + 1] = id end)
 wrapped(1) wrapped(3)
-check(#opened == 1 and opened[1] == 1, "host can't open a friend's soldier's panel")
+check(#opened == 1 and opened[1] == 1, "host can't open a teammate's soldier's panel")
 
--- ---- loot: the friend's click replays the game's loot buttons
+-- ---- loot: the teammate's click replays the game's loot buttons
 Button = { new = function(x, y, w, h, label)
   local self = { X = x, Y = y, width = w, height = h, label = label, status = "active" }
   self.click = function(l)
@@ -475,12 +475,12 @@ check(not squad.hudLabelOk("mnb2Reinf") and not squad.hudLabelOk("pause_option")
 function mnb2RetreatButton() end
 function trenchRetreatzButton() end
 check(not squad.hudLabelOk("mnb2Retreat") and not squad.hudLabelOk("trenchRetreatz"), "battle-ending buttons are the host's call")
--- a friend's move doesn't close the host's own promotion panel
+-- a teammate's move doesn't close the host's own promotion panel
 specID, specDisplay = 1, 1
 squad.setGameRelease(function() specDisplay, skillDisplay, abilityDisplay = 0, 0, 0 end)
 squad.onClientMessage(2, { t = "move", ids = { 3 }, x = 1500, y = 300 })
 squad.hostRunOrders()
-check(specDisplay == 1 and specID == 1, "host's open panel survives a friend's move")
+check(specDisplay == 1 and specID == 1, "host's open panel survives a teammate's move")
 specID, specDisplay = -99, 0
 player.tp = 10
 local seenCam, seenMouse, seenSel
@@ -520,7 +520,7 @@ pm = nil
 for _, m in ipairs(toSeat) do if m.msg.t == "prompt" and m.msg.p == 28 then pm = m.msg end end
 check(pm == nil, "a button not on her screen is refused")
 check(squad.coord("inf") == 20000 and squad.coord(0 / 0) == nil and squad.coord(1e30) == 20000 and squad.coord(512) == 512,
-  "coordinates from friends: finite and on the map")
+  "coordinates from teammates: finite and on the map")
 squad.onClientMessage(2, { t = "cancel" })
 squad.hostRunOrders()
 table.remove(player.deployedTroops) -- the recruit leaves the test
@@ -552,10 +552,10 @@ squad.onClientMessage(2, { t = "move", ids = {}, x = target.x, y = target.y })
 squad.hostRunOrders()
 check(armedGun == 57 and (gunFor == 3 or gunFor == 4), "her click on a soldier hands him the gun (troop button)")
 squad.setGameRelease(fakeRelease)
--- tips on the map: a friend may click one away
--- tips on the map: each window has its own, so a friend's click fades theirs, not the host's
+-- tips on the map: a teammate may click one away
+-- tips on the map: each window has its own, so a teammate's click fades theirs, not the host's
 check(squad.isHudLabel("tipCuez") and squad.HUD_LOCAL.tipCuez and not squad.hudLabelOk("tipCuez"),
-  "a tip click is the friend's own (not sent to the host)")
+  "a tip click is the teammate's own (not sent to the host)")
 
 -- ---- face swap (host)
 local a3, a4 = T[3], T[4]
@@ -575,18 +575,18 @@ for i = 1, 7 do
     retreating = 0, onFire = 0, x = i, y = 0, shortcut = 2 }
 end
 player.deployedTroops[8] = { id = 200, faction = "allied", playerControlled = 0, x = 0, y = 0 } -- an AI ally
-check(squad.active(), "ownership on in a Classic battle with friends")
+check(squad.active(), "ownership on in a Classic battle with teammates")
 squad.hostAfterButtonEngine()
 local P = player.deployedTroops
 check(P[1].coopOwner == 1 and P[2].coopOwner == 2 and P[3].coopOwner == 3 and P[4].coopOwner == 1 and P[7].coopOwner == 1,
   "dealt in turn, host first")
 check(P[8].coopOwner == nil and squad.ownerOf(P[8]) == nil, "AI allies aren't dealt")
-check(P[1].shortcut == 2 and P[2].shortcut == 0, "host keeps its Ctrl groups; friends' soldiers off the host's keys")
+check(P[1].shortcut == 2 and P[2].shortcut == 0, "host keeps its Ctrl groups; teammates' soldiers off the host's keys")
 P[9] = { id = 300, faction = "allied", playerControlled = 1, dead = 0, x = 0, y = 0 }
 squad.hostAfterButtonEngine()
 check(P[9].coopOwner == nil and squad.ownerOf(P[9]) == 1, "later arrivals aren't re-dealt (host's unless recruited)")
 
--- ---- wallets: each player's own TP in a Classic battle with friends (coop_wallet.lua)
+-- ---- wallets: each player's own TP in a Classic battle with teammates (coop_wallet.lua)
 local wallet = require("includes/mods/mnb_coop/coop_wallet")
 local clock = 100
 love.timer = love.timer or {}
@@ -612,12 +612,12 @@ net.seats = { { name = "Host" }, { name = "Ann" }, { name = "Bob" } }
 mnbCoop.battle.viewing = false
 player = { gameState = 0, gameType = 1, mnb2SubGame = 0, tp = 7, screenx = 0, screeny = 0, deployedVehicles = {},
   deployedTroops = { { id = 1, faction = "allied", playerControlled = 1, dead = 0, health = 100, x = 0, y = 0 } } }
-check(wallet.active(), "wallets rule in a Classic battle with friends")
+check(wallet.active(), "wallets rule in a Classic battle with teammates")
 wallet.hostUpdate()
 check(wallet.get(1) == 7 and wallet.get(2) == 7 and wallet.get(3) == 7, "everyone starts the battle with the host's TP")
 local told = {}
 for _, m in ipairs(toSeat) do if m.msg.t == "wallet" then told[m.seat] = m.msg.v end end
-check(told[2] == 7 and told[3] == 7 and told[1] == nil, "each friend is told their wallet")
+check(told[2] == 7 and told[3] == 7 and told[1] == nil, "each teammate is told their wallet")
 toSeat = {}
 wallet.hostUpdate()
 check(#toSeat == 0, "nothing re-sent while nothing changed")
@@ -636,14 +636,14 @@ function giveTp(n) tpMax = 20 player.tp = player.tp + n if player.tp > tpMax the
 income(0) -- (the ribbon is gone again: the game clamps the host, and so does every wallet)
 check(player.tp == 20 and wallet.get(2) == 20 and wallet.get(3) == 20, "a lower cap clamps every wallet at the next income")
 
--- a friend's purchase spends only their wallet
+-- a teammate's purchase spends only their wallet
 buy(2, 2)
 check(wallet.get(2) == 18 and wallet.get(1) == 20 and wallet.get(3) == 20 and player.tp == 20, "Ann's purchase spends only Ann's TP")
 buy(3, 10)
 check(wallet.get(3) == 10 and wallet.get(2) == 18 and player.tp == 20, "Bob's purchase spends only Bob's TP")
--- income while a friend's order runs still reaches all three exactly once
+-- income while a teammate's order runs still reaches all three exactly once
 wallet.with(2, function() income(1) end)
-check(wallet.get(2) == 19 and wallet.get(3) == 11 and wallet.get(1) == 20 and player.tp == 20, "income inside a friend's call: once each, host's TP safe")
+check(wallet.get(2) == 19 and wallet.get(3) == 11 and wallet.get(1) == 20 and player.tp == 20, "income inside a teammate's call: once each, host's TP safe")
 -- an error inside the game's code: the host's wallet comes back
 testBoom = true
 buy(2, 4)
@@ -715,7 +715,7 @@ player.gameType = 0
 check(not wallet.active() and not wallet.keypressed("g"), "campaign battles keep the shared game rules")
 player.gameType = 1
 
--- the friend's side: their own TP over the mirror's
+-- the teammate's side: their own TP over the mirror's
 net.role, net.mySeat = "client", 2
 mnbCoop.battle.viewing = true
 player = { gameState = 0, gameType = 1, tp = 99 }
@@ -723,7 +723,7 @@ wallet.clientApply()
 check(player.tp == 99, "no wallet message yet: the mirror's TP is left alone")
 wallet.onHostMessage({ t = "wallet", v = 13 })
 wallet.clientApply()
-check(player.tp == 13, "the friend sees their own TP, not the host's")
+check(player.tp == 13, "the teammate sees their own TP, not the host's")
 wallet.onHostMessage({ t = "wallet", v = "evil" })
 wallet.onHostMessage({ t = "wallet", v = 0 / 0 })
 wallet.onHostMessage({ t = "wallet", v = 1e12 })
@@ -735,7 +735,7 @@ wallet.onHostMessage({ t = "wallet", note = "Bob gave you 5 TP\n" .. string.rep(
 check(noteShown and #noteShown <= 80 and not noteShown:find("\n"), "the note is cut short and cleaned")
 sent = {}
 net.sendToHost = function(msg) sent[#sent + 1] = msg end
-check(wallet.keypressed("g") and #sent == 1 and sent[1].t == "givetp", "the friend's G asks the host (nothing else sent)")
+check(wallet.keypressed("g") and #sent == 1 and sent[1].t == "givetp", "the teammate's G asks the host (nothing else sent)")
 wallet.clientReset()
 player.tp = 99
 wallet.clientApply()

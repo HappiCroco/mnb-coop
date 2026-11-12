@@ -38,7 +38,7 @@ check(#T() == 6 and T()[1].coopUid and T()[6].coopUid, "roster of 6, each with a
 local hostUid = {}
 for i = 1, 6 do hostUid[i] = T()[i].coopUid end
 
--- ---- trio: two friends sent their rosters (top 3, by position)
+-- ---- trio: two teammates sent their rosters (top 3, by position)
 net.role, net.mySeat = "host", 1
 net.seats = { { name = "Host", steamId = "111" }, { name = "Ann", steamId = "222" }, { name = "Bob", steamId = "333" } }
 local function friendSoldier(name, uid, xp)
@@ -58,7 +58,7 @@ check(table.concat(seatsOf, ",") == "1,1,2,2,3,3", "trio: 2 each in seat order (
 check(T()[1].coopUid == hostUid[1] and T()[2].coopUid == hostUid[3], "host brings roster cards 1 and 3 (top row)")
 check(T()[3].name == "Ann1" and T()[4].name == "Ann3", "Ann brings her top two")
 check(T()[5].name == "Bob1" and T()[6].name == "Bob3", "Bob's sorted by position: card 1 before card 3")
-check(T()[3].faction == "allied" and T()[3].playerControlled == 1 and T()[3].evil == nil, "friend soldiers sanitized")
+check(T()[3].faction == "allied" and T()[3].playerControlled == 1 and T()[3].evil == nil, "teammate soldiers sanitized")
 check(T()[3].id ~= 1001 or T()[5].id ~= 1001, "duplicate ids re-rolled")
 check(player.coopHome[2] and player.coopHome[4] and player.coopHome[5] and player.coopHome[6], "host's cards 2, 4, 5, 6 stay home")
 campaign.retag()
@@ -73,7 +73,7 @@ T()[7] = { faction = "axis", playerControlled = 0 } -- an enemy left in the list
 campaign.retag()
 check(T()[6].coopSeat == 3, "replacement in Bob's slot is Bob's")
 
--- ---- settle: host roster back in order, home soldiers +5 (half of 10), results to friends
+-- ---- settle: host roster back in order, home soldiers +5 (half of 10), results to teammates
 local sent = {}
 net.sendTo = function(seat, msg) sent[seat] = msg end
 local homeXpBefore = player.coopHome[4].xp
@@ -219,7 +219,7 @@ for i = 1, 6 do if T()[i] and T()[i].coopUid ~= nil and T()[i].coopUid == uids[i
 check(player.gainz == 1 and #T() >= 6 and not sameAny, "fresh start: day 1, six new soldiers")
 campaign.exit()
 
--- ---- the friend's side: results land in their own co-op save
+-- ---- the teammate's side: results land in their own co-op save
 net.role, net.mySeat = "client", 2
 local toHost = {}
 net.sendToHost = function(msg) toHost[#toHost + 1] = msg end

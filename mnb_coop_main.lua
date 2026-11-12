@@ -11,7 +11,7 @@
 --   coop_hud     network stats panel (ping, up/down rates), option or Ctrl+F8
 --   coop_campaign the co-op campaign: the game's campaign on its own save files
 --   coop_battle  battle sync: the host's battle mirrored to clients (they watch)
---   coop_squad   who owns which soldier: keys, rings, face frames, friends' move orders
+--   coop_squad   who owns which soldier: keys, rings, face frames, teammates' move orders
 -- =============================================================================
 local net = require("includes/mods/mnb_coop/coop_net")
 local profile = require("includes/mods/mnb_coop/coop_profile")
@@ -68,7 +68,7 @@ function preMNB2Admin(...)
     -- a new field, or a battle under way being loaded (mnb2.lua:7, 262)
     local fresh = not (type(player) == "table" and player.ui_gameStarted ~= 0 and player.ui_gameStarted ~= nil)
     -- a Classic battle, new (the deploy buttons, urb_engine.lua:8824-8914) or carried on
-    -- (urb_engine.lua:40033), waits for every friend's READY: the ready room opens and replays
+    -- (urb_engine.lua:40033), waits for every teammate's READY: the ready room opens and replays
     -- this call on START (the buttons set mnb2SubGame first, so the replay starts the same mode)
     local args = { n = select("#", ...), ... }
     if not lobby.gate("CO-OP CLASSIC", function() preMNB2Admin(unpack(args, 1, args.n)) end) then return end
@@ -87,7 +87,7 @@ battle.onStopView = function(why)
 end
 
 -- ---------------------------------------------------------------- network hooks
--- host: friends' orders (coop_squad) and rosters (coop_campaign)
+-- host: teammates' orders (coop_squad) and rosters (coop_campaign)
 net.onClientMessage = function(seat, msg)
     return squad.onClientMessage(seat, msg) or wallet.onClientMessage(seat, msg) or campaign.onClientMessage(seat, msg)
 end
@@ -212,7 +212,7 @@ local window = require("includes/mods/mnb_coop/coop_window")
 local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
-    pcall(lobby.updateRoom) -- friends follow the host into and out of the ready room
+    pcall(lobby.updateRoom) -- teammates follow the host into and out of the ready room
     pcall(lobby.updatePresence) -- where I am, for the others' lobby cards
     local okw, errw = pcall(window.update)
     if not okw then print("[mnb_coop] window: " .. tostring(errw)) end
@@ -233,7 +233,7 @@ function love.update(dt, ...)
         pcall(campaign.retag)
     end
     if net.role == "host" then
-        local oko, erro = pcall(squad.hostRunOrders) -- friends' orders, before the game's frame
+        local oko, erro = pcall(squad.hostRunOrders) -- teammates' orders, before the game's frame
         if not oko then print("[mnb_coop] orders: " .. tostring(erro)) end
     end
     local okd, errd = pcall(defense.update) -- co-op defense: sides, and the radar
@@ -256,12 +256,12 @@ end
 -- place soldiers 7+ once the game has set the mission up.
 local coopGo = menu_goButton
 function menu_goButton(...)
-    -- a friend connected to a host doesn't start battles of their own
+    -- a teammate connected to a host doesn't start battles of their own
     if net.role == "client" then
         mnbCoop.notice("Only the host starts missions")
         return
     end
-    -- the host waits for every friend's READY (the ready room, replaying GO on START);
+    -- the host waits for every teammate's READY (the ready room, replaying GO on START);
     -- a mission that starts uses it up
     local args = { n = select("#", ...), ... }
     if not lobby.gate("CO-OP CAMPAIGN", function() menu_goButton(unpack(args, 1, args.n)) end) then return end
@@ -312,7 +312,7 @@ end
 
 -- Battle HUD pass: number keys follow your own soldiers in co-op (coop_squad.lua).
 local coopButtonEngine = buttonEngine
-squad.setGameButtonEngine(coopButtonEngine) -- friends build their HUD buttons with it
+squad.setGameButtonEngine(coopButtonEngine) -- teammates build their HUD buttons with it
 function buttonEngine(...)
     local result = coopButtonEngine(...)
     local ok, err = pcall(squad.hostAfterButtonEngine)
@@ -322,7 +322,7 @@ end
 
 -- Co-op Classic rules (12-soldier size control, double TP): every co-op defense battle,
 -- solo too (owner, 2026-11-12: "the 6-man rule becomes 12 even if I'm solo"), and any
--- Classic battle the host plays with friends connected.
+-- Classic battle the host plays with teammates connected.
 local function coopClassicRules()
     if type(player) ~= "table" or player.gameType ~= 1 then return false end
     return defense.on or (net.role == "host" and net.playerCount() > 1)
@@ -337,7 +337,7 @@ function coopSizeLimit()
     return coopSquadMax and coopSquadMax() or 6
 end
 
--- TP income in co-op Classic. With friends connected, every player has their own wallet and
+-- TP income in co-op Classic. With teammates connected, every player has their own wallet and
 -- giveTp's full amount goes into each one (coop_wallet.lua), not doubled. Alone (a solo
 -- defense) it is the old rule: one pool, double (owner, 2026-11-11). The cap (20 + ribbons,
 -- giveTp at mnb2.lua:894) is not raised. giveTp is the game's one income path (waves, taunts,
@@ -362,7 +362,7 @@ function giveTp(nbr, ...)
     return result
 end
 
--- A face click on the host doesn't open a friend's soldier's promotion panel: they choose.
+-- A face click on the host doesn't open a teammate's soldier's promotion panel: they choose.
 iconClick = squad.wrapIconClick(iconClick)
 
 -- XP day cap in the co-op campaign (coop_campaign.lua): no farming the easy days.
@@ -385,7 +385,7 @@ end
 -- Key and mouse handlers go in through qmInput.wrap (coop_qminput.lua): QuarterMaster 1.8 has its own in
 -- front and installs them twice, and a plain love.* swap made a click loop forever (stack overflow).
 local coopKeypressed -- the handler ours passes on to (the game's)
--- keys a friend may use while watching: they only change that machine's view
+-- keys a teammate may use while watching: they only change that machine's view
 -- (main.lua: f9 tactical view 7861, tab faces 8493, f3/f4 window 7886-7894)
 local VIEW_KEYS = { f9 = true, tab = true, f3 = true, f4 = true }
 local function onKeypressed(key, ...)
@@ -394,7 +394,7 @@ local function onKeypressed(key, ...)
     -- G: give TP to the next player (Classic wallets, coop_wallet.lua)
     if key == wallet.GIVE_KEY and wallet.keypressed(key) then return end
     if battle.viewing then
-        -- friend in the host's battle: own selection keys, own view keys, Esc twice to leave
+        -- teammate in the host's battle: own selection keys, own view keys, Esc twice to leave
         local ok, used = pcall(squad.clientKeypressed, key)
         if ok and used then return end
         if VIEW_KEYS[key] then
@@ -423,15 +423,15 @@ local function onKeyreleased(key, ...)
     end
     if not coopKeyreleased then return end
     if (key == "lalt" or key == "ralt") and net.role == "host" and squad.active() then
-        return squad.withOwnWaypoints(squad.mySeat(), coopKeyreleased, key, ...) -- friends' waypoints wait for them
+        return squad.withOwnWaypoints(squad.mySeat(), coopKeyreleased, key, ...) -- teammates' waypoints wait for them
     end
     return coopKeyreleased(key, ...)
 end
 coopKeyreleased = qmInput.wrap("keyreleased", function() return onKeyreleased end)
--- friends' H and Alt release are run through the game's own key handlers
+-- teammates' H and Alt release are run through the game's own key handlers
 squad.setGameKeys(coopKeypressed, coopKeyreleased)
 
--- Pause > Options saves and leaves the battle (urb_engine.lua:45012): not while friends are in it.
+-- Pause > Options saves and leaves the battle (urb_engine.lua:45012): not while teammates are in it.
 local coopPauseOption = pause_optionButton
 function pause_optionButton(...)
     if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameState == 0 then
@@ -449,7 +449,7 @@ local coopDraw = love.draw
 function love.draw(...)
     if battle.viewing then
         -- the host's battle drawn with the game's code: a missing piece must not
-        -- crash the friend's game, it shows as a message and goes in the log once
+        -- crash the teammate's game, it shows as a message and goes in the log once
         local okb, restore = pcall(battle.beforeDraw)
         love.graphics.push("all")
         local args = { ... }
@@ -504,7 +504,7 @@ local function onMousereleased(x, y, button, ...)
     return coopMousereleased(x, y, button, ...)
 end
 coopMousereleased = qmInput.wrap("mousereleased", function() return onMousereleased end)
--- friends' move orders are replayed through the game's own release handler
+-- teammates' move orders are replayed through the game's own release handler
 squad.setGameRelease(coopMousereleased)
 
 local coopQuit = love.quit

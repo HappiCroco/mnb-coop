@@ -375,7 +375,7 @@ local C = nil -- client view state
 -- the camera (volumeScale gfx.lua:13, gunScale/stepScale/ambiantScale/exploScale
 -- urb_engine.lua:17285-17364), as in `clone:setVolume(stepScale(dude)/2.3)`. The host
 -- notes the scale call just before a setVolume: where the sound is and the factor on
--- top; each friend works the loudness out again from their own camera.
+-- top; each teammate works the loudness out again from their own camera.
 local SCALE_CODE = { volumeScale = "v", gunScale = "g", stepScale = "s", exploScale = "e", ambiantScale = "a" }
 local SCALE_NAME = {}
 for name, code in pairs(SCALE_CODE) do SCALE_NAME[code] = name end
@@ -580,7 +580,7 @@ end
 -- ---------------------------------------------------------------- debrief
 -- After a battle the host's game shows a mission-end page (drawState1): 4 mission
 -- successful, 5 retreat/squad lost, 10 classic debrief, 14 war won, 15 war lost.
--- The sync keeps running there so friends see the same page. Those pages animate
+-- The sync keeps running there so teammates see the same page. Those pages animate
 -- with globals (box1..9Timer, play*once, fades, the classic temp* stats), which the
 -- host sends as plain values. Clients accept only names matching these patterns.
 battle.DEBRIEF_PAGES = { [4] = true, [5] = true, [10] = true, [14] = true, [15] = true }
@@ -624,7 +624,7 @@ end
 
 -- host: what the host's screen shows (battle, or which mission-end page)
 local function viewState()
-    -- pz: the host has the game paused (the global `pause`, Esc): friends see a PAUSED banner
+    -- pz: the host has the game paused (the global `pause`, Esc): teammates see a PAUSED banner
     -- instead of everyone just freezing (owner, 2026-11-12)
     return { gs = player.gameState == 0 and 0 or 1, page = tonumber(menuPage) or 0,
         pz = (tonumber(rawget(_G, "pause")) or 0) ~= 0 and 1 or 0 }
@@ -633,7 +633,7 @@ end
 -- client: show the same thing
 local function applyView(v)
     if type(v) ~= "table" then return end
-    -- only a banner: the friend's own `pause` stays 0 (their window must keep drawing and
+    -- only a banner: the teammate's own `pause` stays 0 (their window must keep drawing and
     -- taking their keys; the host's updates simply stop moving things)
     if C then C.hostPaused = v.pz == 1 and v.gs == 0 end
     if v.gs == 0 then
@@ -987,7 +987,7 @@ function battle.stopView(why)
     log("stopped watching (%s)", tostring(why))
 end
 
--- Client: Back on the mission report. This friend is done with it: back to the lobby
+-- Client: Back on the mission report. This teammate is done with it: back to the lobby
 -- now, still in the session; the host's next battle brings them in again (its "bfull").
 -- Their soldiers' results come from the host when it leaves the report, as before.
 function battle.leaveReport()
@@ -1093,7 +1093,7 @@ end
 
 -- The Classic battle's background loop (gunfire in the distance) starts while the host
 -- sets the battle up (mnb2.lua:369-377), before the sync runs, so it never reaches a
--- friend. Their window starts the game's own loop once, as the game would have.
+-- teammate. Their window starts the game's own loop once, as the game would have.
 function battle.startBackground()
     if not C or C.bgStarted or type(player) ~= "table" or player.gameType ~= 1 or player.gameState ~= 0 then return end
     C.bgStarted = true
@@ -1186,9 +1186,9 @@ end
 -- ---- client: the D-Day landing intro (campaign day 1, drawFiles.lua:1450-1563)
 -- The sea there is the window's background colour, set by the host's game when the boat
 -- ride starts (urb_engine.lua:40176) and back to black on landing (drawFiles.lua:2174):
--- a friend's window never ran that, so their sea was black. Their colour follows the
+-- a teammate's window never ran that, so their sea was black. Their colour follows the
 -- mirrored state instead. The start choices (difficulty, map cycle, read the brief) are
--- the host's to click (diffSelect1..6, urb_engine.lua:44452): a friend sees the step's
+-- the host's to click (diffSelect1..6, urb_engine.lua:44452): a teammate sees the step's
 -- empty frame instead of buttons they can't press, and a note that the host is choosing.
 local SEA = { 28 / 255, 39 / 255, 49 / 255 }
 local HOST_CHOICE = { [-3] = "difficulty", [-5] = "map cycle", [-7] = "whether to read the brief" }
@@ -1228,7 +1228,7 @@ function battle.drawOverlay()
     end
     if C.hostPaused then
         -- the host paused (Esc): say so in the middle of the screen, the game's big font,
-        -- over a dimmed battle (the game's own pause screen isn't drawn on a friend's window)
+        -- over a dimmed battle (the game's own pause screen isn't drawn on a teammate's window)
         love.graphics.push("all")
         love.graphics.origin()
         local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()

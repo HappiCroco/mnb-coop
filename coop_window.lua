@@ -1,7 +1,7 @@
 -- =============================================================================
 -- TWO COPIES ON ONE PC: the windows share the screen.
--- For testing with two game windows on one PC (the friend joins 127.0.0.1): the host's
--- window goes to the top of the screen, the friend's to the bottom. The game's window is
+-- For testing with two game windows on one PC (the teammate joins 127.0.0.1): the host's
+-- window goes to the top of the screen, the teammate's to the bottom. The game's window is
 -- a fixed 1280x720 that draws with no scaling (main.lua:46; its own scaling is commented
 -- out at main.lua:4378), so on a screen too small for two of them each copy shrinks:
 --   * the game draws a whole frame onto a 1280x720 canvas, shown scaled down;
@@ -85,7 +85,7 @@ function win.shrink(s)
 end
 
 -- Two copies on this PC: they run under the same Steam account, so the host's seat and a
--- friend's seat carry the same Steam id (a real friend always has another). Joining
+-- teammate's seat carry the same Steam id (a real teammate always has another). Joining
 -- 127.0.0.1 counts too, whatever the ids.
 local function sameAccount(a, b)
     return type(a) == "table" and type(b) == "table" and a.steamId ~= nil and a.steamId ~= "" and a.steamId == b.steamId
