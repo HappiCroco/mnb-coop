@@ -624,12 +624,18 @@ end
 
 -- host: what the host's screen shows (battle, or which mission-end page)
 local function viewState()
-    return { gs = player.gameState == 0 and 0 or 1, page = tonumber(menuPage) or 0 }
+    -- pz: the host has the game paused (the global `pause`, Esc): friends see a PAUSED banner
+    -- instead of everyone just freezing (owner, 2026-11-12)
+    return { gs = player.gameState == 0 and 0 or 1, page = tonumber(menuPage) or 0,
+        pz = (tonumber(rawget(_G, "pause")) or 0) ~= 0 and 1 or 0 }
 end
 
 -- client: show the same thing
 local function applyView(v)
     if type(v) ~= "table" then return end
+    -- only a banner: the friend's own `pause` stays 0 (their window must keep drawing and
+    -- taking their keys; the host's updates simply stop moving things)
+    if C then C.hostPaused = v.pz == 1 and v.gs == 0 end
     if v.gs == 0 then
         player.gameState = 0
     elseif battle.DEBRIEF_PAGES[v.page] then
@@ -1220,6 +1226,29 @@ function battle.drawOverlay()
         love.graphics.printf(msg, 0, 85, love.graphics.getWidth(), "center")
         love.graphics.pop()
     end
+    if C.hostPaused then
+        -- the host paused (Esc): say so in the middle of the screen, the game's big font,
+        -- over a dimmed battle (the game's own pause screen isn't drawn on a friend's window)
+        love.graphics.push("all")
+        love.graphics.origin()
+        local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+        love.graphics.setColor(0, 0, 0, 0.35)
+        love.graphics.rectangle("fill", 0, 0, sw, sh)
+        local big = largeFont or love.graphics.getFont()
+        local small = nonoFont or love.graphics.getFont()
+        local y = sh / 2 - big:getHeight()
+        love.graphics.setFont(big)
+        love.graphics.setColor(0, 0, 0, 1)
+        for _, d in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+            love.graphics.printf("PAUSED", d[1], y + d[2], sw, "center")
+        end
+        love.graphics.setColor(1, 0.85, 0.4, 1)
+        love.graphics.printf("PAUSED", 0, y, sw, "center")
+        love.graphics.setFont(small)
+        love.graphics.setColor(0.9, 0.9, 0.9, 1)
+        love.graphics.printf(C.hostName .. " paused the game", 0, y + big:getHeight() + 6, sw, "center")
+        love.graphics.pop()
+    end
     -- (a draw error shows as an error pop-up, battle.noteDrawError)
     local font = nonoFont or love.graphics.getFont()
     local text = "WATCHING " .. C.hostName:upper() .. "'S BATTLE"
@@ -1281,6 +1310,7 @@ battle._test = {
     pack = pack,
     applySnap = applySnap,
     startView = startView,
+    viewState = viewState,
     DEL = DEL,
     setClient = function(c) C = c end,
     getClient = function() return C end,
