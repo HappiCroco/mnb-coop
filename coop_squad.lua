@@ -943,11 +943,44 @@ local function miniMapBox()
     return 640 - mapLength / 2, 5, mapLength, 20
 end
 
+-- The mission report (menuPage 4/5 on the host's mirror): the game's menu pass
+-- (buttonUpdateMenu, urb_engine.lua:8235-8303) isn't run on a friend's window, so its
+-- hover areas are rebuilt here, in its order (the first one under the mouse wins,
+-- 8487-8514): Back, then per squad slot 1..6 the soldier's name and his new awards.
+local REPORT_SLOTS = { { 667, 246, 710 }, { 667, 321, 710 }, { 667, 396, 710 },
+    { 887, 246, 930 }, { 887, 321, 930 }, { 887, 396, 930 } }
+
+function squad.reportHoverText(mx, my)
+    if menuPage ~= 4 and menuPage ~= 5 then return nil end
+    if inBox(mx, my, 32, 686, 60, 30) then return type(mouseOverBack) == "string" and mouseOverBack or "" end
+    local troops = type(player) == "table" and player.deployedTroops or {}
+    for slot, pos in ipairs(REPORT_SLOTS) do
+        local t = troops[slot]
+        if type(t) == "table" then
+            if inBox(mx, my, pos[1], pos[2], 40, 40) then return tostring(t.name or "") end
+            local n = 0
+            for _, a in ipairs(type(t.awards) == "table" and t.awards or {}) do
+                if type(a) == "table" and a.called == 0 then
+                    n = n + 1
+                    if inBox(mx, my, pos[3] + n * 10, pos[2] - 1, 20, 40) then
+                        return tostring(a.name or "") .. ", " .. tostring(rawget(_G, "awardDesc" .. tostring(a.icon)) or "")
+                    end
+                end
+            end
+        end
+    end
+    return ""
+end
+
 function squad.clientHover()
     mouseOverText, contextualText, iconOn = "", "", 0
     mouseOverId, mouseOverId2 = -99, -99
     if type(player) ~= "table" or type(player.deployedTroops) ~= "table" then return end
     local mx, my = love.mouse.getPosition()
+    if player.gameState ~= 0 then
+        mouseOverText = squad.reportHoverText(mx, my) or ""
+        return
+    end
     local wx, wy = mx + (player.screenx or 0), my + (player.screeny or 0)
     -- 0. the promotion panel: the game's hover loop lets the last button win,
     -- and the panel's buttons come last (urb_engine.lua:44763, 44844-44851)

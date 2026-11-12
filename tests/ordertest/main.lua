@@ -154,6 +154,20 @@ love.mouse.getPosition = function() return 790 - 1000, 290 end
 squad.clientHover()
 check(contextualText == "Tip fourteen", "hovering a tip shows its text (" .. tostring(contextualText) .. ")")
 squad.hudButtons, player.tipCue = {}, {}
+-- the mission report: names and new awards show their text on hover
+local savedTroops, savedState = player.deployedTroops, player.gameState
+player.deployedTroops = {}
+for i = 1, 6 do player.deployedTroops[i] = { name = "Pvt " .. i, awards = {} } end
+player.deployedTroops[4].awards = { { name = "Purple Heart", icon = 3, called = 1 }, { name = "Bronze Star", icon = 7, called = 0 } }
+awardDesc7 = "for valour"
+player.gameState, menuPage = 1, 4
+love.mouse.getPosition = function() return 930 + 10 + 5, 245 + 20 end -- slot 4's first new award
+squad.clientHover()
+check(mouseOverText == "Bronze Star, for valour", "report: hovering a medal shows it (" .. tostring(mouseOverText) .. ")")
+love.mouse.getPosition = function() return 667 + 5, 321 + 5 end
+squad.clientHover()
+check(mouseOverText == "Pvt 2", "report: hovering a soldier shows his name")
+player.deployedTroops, player.gameState, menuPage = savedTroops, savedState, 0
 -- face bar name
 showFaces = 1
 love.mouse.getPosition = function() return 60 * 3 + 10, 680 end -- third face

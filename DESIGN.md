@@ -257,6 +257,9 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - (v0.9.6) Tips are a spawned list (each window has its own copies), so a friend's tip click is HUD_LOCAL: their
   window runs tipCuezButton on its own copies (0.9.5 sent it to the host, which faded the host's tip only). The
   hover text comes from clientHover's tip step; the tip's HUD entry no longer swallows it.
+- (v0.9.7) Mission report hover on friends' windows: the game's menu pass (buttonUpdateMenu) never runs there, so
+  `squad.reportHoverText` rebuilds page 4/5's hover areas in the game's order (Back, then per slot 1..6 the name and
+  the new awards, urb_engine.lua:8235-8303) and clientHover runs in the debrief too.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.
