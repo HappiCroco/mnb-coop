@@ -266,7 +266,10 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - Layout (after preMNB2Admin): squad in a ring around a radar at the map's middle (endLine/2, y 360), camera there.
   The radar uses its own placeable names `coopRadar`/`coopRadarTop` (pictures = the game's radarBase/radarTop) so
   the game's radar rules (alliedEw cancelling support, wave-end reveal, capture, destruction) don't touch it.
-- Waves: spawnMNB2Wave wrapped; every other German it makes is mirrored to the left flank (same distance west of the
+- Waves with friends (owner, 2026-11-11: "make it double"): every German infantryman a wave makes stays right and
+  gets a twin mirrored to the left (copy of his tables, new random id), so each side faces the full wave. Solo
+  defense keeps the split below.
+- Waves solo: spawnMNB2Wave wrapped; every other German it makes is mirrored to the left flank (same distance west of the
   westmost player as the game put him east of the eastmost). `coopSide` "L"/"R" on every German; any German that
   appears without one (map, paradrop, crews, frontal assault) gets the side he's on. Vehicles all stay right
   (their AI has hard left-facing rules, ai.lua:3403 and siblings).

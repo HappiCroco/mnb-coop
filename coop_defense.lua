@@ -202,23 +202,49 @@ function defense.resume()
 end
 
 -- ---------------------------------------------------------------- waves
--- Every other German a wave brings is mirrored to the left flank: as far left of
--- the westmost player as the game put him right of the eastmost one.
+-- With friends (owner, 2026-11-11: more defenders, so double the attack): every German
+-- infantryman a wave brings stays where the game put him (right) and gets a twin on the
+-- left, mirrored: as far left of the westmost player as the game put him right of the
+-- eastmost one. Each side faces the game's full wave. Solo: the wave is split instead,
+-- every other German to the left. Vehicles stay right (see the header).
+
+-- a copy of a soldier for his twin: his own tables (weapon, perks, buffs...) copied a few
+-- levels deep, anything deeper shared (never a reference back into `player`)
+local function copySoldier(v, depth)
+    if type(v) ~= "table" or depth > 3 or v == player then return v end
+    local c = {}
+    for k, x in pairs(v) do c[k] = copySoldier(x, depth + 1) end
+    return c
+end
+
+local function newId()
+    -- the game's own ids are random like this (ai.lua:2609)
+    if type(randNbr) == "function" then return randNbr(9999999999) end
+    return math.random(1, 2 ^ 31)
+end
+
 function defense.wrapWave(orig)
     return function(...)
         if not defense.active() then return orig(...) end
         local troops = player.deployedTroops
         local n0 = #troops
         local r = { orig(...) }
+        local n1 = #troops
         local lo, hi = alliedSpan()
-        for i = n0 + 1, #troops do
+        local twins = net.playerCount() > 1
+        for i = n0 + 1, n1 do
             local t = troops[i]
             if isGerman(t) and t.coopSide == nil then
-                defense.flip = defense.flip + 1
-                if defense.flip % 2 == 0 then
-                    sendLeft(t, math.max(defense.LEFT_EDGE + 200, math.floor(lo - (t.x - hi))))
-                else
+                local leftX = math.max(defense.LEFT_EDGE + 200, math.floor(lo - (t.x - hi)))
+                if twins then
                     t.coopSide = "R"
+                    local twin = copySoldier(t, 1)
+                    twin.id = newId()
+                    sendLeft(twin, leftX)
+                    troops[#troops + 1] = twin
+                else
+                    defense.flip = defense.flip + 1
+                    if defense.flip % 2 == 0 then sendLeft(t, leftX) else t.coopSide = "R" end
                 end
             end
         end

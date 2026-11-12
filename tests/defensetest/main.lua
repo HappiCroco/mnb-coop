@@ -96,8 +96,26 @@ for i = n0 + 1, #T do
     check(T[i].x == hi + 750, "right German where the game put him")
   end
 end
-check(left == 2 and right == 2, "the wave split in two")
+check(left == 2 and right == 2, "solo: the wave split in two")
 local gL, gR = T[n0 + 2], T[n0 + 1]
+
+-- with friends: every German gets a twin on the left (double the attack)
+local net = require("includes/mods/mnb_coop/coop_net")
+net.seats = { { name = "Host" }, { name = "Ann" } }
+local n2 = #T
+wave()
+local L2, R2, ids = 0, 0, {}
+for i = n2 + 1, #T do
+  if T[i].coopSide == "L" then L2 = L2 + 1 elseif T[i].coopSide == "R" then R2 = R2 + 1 end
+  ids[T[i]] = true
+end
+check(L2 == 4 and R2 == 4, "with friends: the full wave on each side (" .. L2 .. " left, " .. R2 .. " right)")
+local twin, orig = T[#T], T[n2 + 4] -- originals are n2+1..n2+4, their twins come after, in order
+check(twin.coopSide == "L" and twin.x == lo - 750 and twin.y == orig.y, "a twin mirrored to the left at the same height")
+check(twin ~= orig and twin.weapon ~= orig.weapon or orig.weapon == nil, "the twin has his own tables")
+net.seats = {}
+-- the twins leave the test's list again
+for i = #T, n2 + 1, -1 do table.remove(T, i) end
 
 -- the AI: forward and back are mirrored for the left side
 local origFwd = 0
