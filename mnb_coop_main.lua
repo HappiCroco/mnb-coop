@@ -82,9 +82,79 @@ net.onReset = function()
     campaign.friendRosters = {}
 end
 
--- a short message on the co-op banner (lobby.draw)
+-- ---------------------------------------------------------------- pop-ups
+-- Owner (2026-11-12): errors should show on screen, not only in the log. Two kinds:
+--   notice: a co-op message (a refusal, "New war: ...") - 4 s
+--   error:  something of ours failed (a Lua error caught by a pcall) - 10 s, with a count
+-- Errors are caught where they're printed: every caught error of ours is printed as
+-- "[mnb_coop] <what>: <file>:<line>: <message>", so the print hook below picks those
+-- up (and nothing else), without touching each of the ~30 places.
+local toasts = {}
+mnbCoop.toasts = toasts
+local TOAST_TIME = { notice = 4, error = 10 }
+
+-- refresh = true: still happening (every frame): keep it up without counting
+function mnbCoop.toast(kind, text, refresh)
+    text = tostring(text):gsub("%s+", " ")
+    if #text > 150 then text = text:sub(1, 147) .. "..." end
+    local now = love.timer.getTime()
+    for _, t in ipairs(toasts) do
+        if t.text == text and t.kind == kind then
+            t.at = now
+            if not refresh then t.count = t.count + 1 end -- the same one again: a count
+            return
+        end
+    end
+    table.insert(toasts, 1, { kind = kind, text = text, at = now, count = 1 })
+    while #toasts > 4 do table.remove(toasts) end
+end
+
+do
+    local realPrint = print
+    print = function(...)
+        realPrint(...)
+        local first = select(1, ...)
+        if type(first) == "string" then
+            local what, msg = first:match("^%[mnb_coop%] ([^:]+): (.-%.lua:%d+:.*)$")
+            if what then pcall(mnbCoop.toast, "error", what .. ": " .. (msg:match("^[^\n]*") or msg)) end
+        end
+    end
+end
+
+function mnbCoop.drawToasts()
+    local now = love.timer.getTime()
+    for i = #toasts, 1, -1 do
+        if now - toasts[i].at > TOAST_TIME[toasts[i].kind] then table.remove(toasts, i) end
+    end
+    if #toasts == 0 then return end
+    local g = love.graphics
+    g.push("all")
+    g.origin()
+    local font = nonoFont or g.getFont()
+    g.setFont(font)
+    local w, x, y = 460, g.getWidth() - 470, 60
+    for _, t in ipairs(toasts) do
+        local head = t.kind == "error" and ("CO-OP ERROR" .. (t.count > 1 and (" (x" .. t.count .. ")") or "")) or "CO-OP"
+        local body = t.text .. (t.kind == "error" and "\nDetails: Mods/qm/log/latest.log" or "")
+        local _, lines = font:getWrap(body, w - 20)
+        local h = font:getHeight() * (#lines + 1) + 16
+        local fade = math.min(1, (TOAST_TIME[t.kind] - (now - t.at)) / 0.5)
+        g.setColor(0.08, 0.05, 0.05, 0.85 * fade)
+        g.rectangle("fill", x, y, w, h, 4)
+        if t.kind == "error" then g.setColor(0.85, 0.25, 0.2, fade) else g.setColor(0.85, 0.7, 0.3, fade) end
+        g.rectangle("line", x, y, w, h, 4)
+        g.print(head, x + 10, y + 6)
+        g.setColor(0.92, 0.9, 0.86, fade)
+        g.printf(body, x + 10, y + 6 + font:getHeight(), w - 20, "left")
+        y = y + h + 8
+    end
+    g.pop()
+end
+
+-- a short message on the co-op banner (lobby.draw), and as a pop-up
 function mnbCoop.notice(text)
     mnbCoop.noticeText, mnbCoop.noticeAt = text, love.timer.getTime()
+    pcall(mnbCoop.toast, "notice", text)
     pcall(function() poop:clone():play() end)
 end
 
@@ -332,6 +402,7 @@ function love.draw(...)
     end
     local ok, err = pcall(hud.draw)
     if not ok then print("[mnb_coop] stats panel: " .. tostring(err)) end
+    pcall(mnbCoop.drawToasts) -- error and notice pop-ups, on top of everything
 end
 
 local coopMousepressed = love.mousepressed
