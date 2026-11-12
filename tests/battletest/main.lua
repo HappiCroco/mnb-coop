@@ -275,6 +275,33 @@ umsg.t, umsg.view = "snap", T.viewState()
 send(umsg)
 check(T.getClient().hostPaused == false, "host resumed: the banner goes")
 
+-- updates in clumps over a long connection: moves are smoothed over the longest recent gap
+do
+  local realTime = love.timer.getTime
+  local tt = 5000
+  love.timer.getTime = function() return tt end
+  local c = T.getClient()
+  c.lastAt, c.avgGap, c.peakGap = tt, nil, nil
+  for _, gap in ipairs({ 0.005, 0.005, 0.12, 0.005, 0.005 }) do
+    tt = tt + gap
+    player = hostP
+    local m = T.capture(st)
+    m.t = "snap"
+    send(m)
+  end
+  check(c.interval > 0.1 and c.interval <= 0.25, "after a clump, a move still spans the last long gap (" .. c.interval .. " s)")
+  -- the banner options draw without errors
+  for _, mode in ipairs({ 1, 2, 3 }) do
+    local saved = net.option
+    net.option = function(id, d) if id == "watchBanner" then return mode end return d end
+    tt = tt + 10
+    local okd, errd = pcall(battle.drawOverlay)
+    check(okd, "banner mode " .. mode .. " draws: " .. tostring(errd))
+    net.option = saved
+  end
+  love.timer.getTime = realTime
+end
+
 -- mission-end page: the host's page and its animation timers, nothing else
 player = hostP
 hostP.gameState = 1
