@@ -1040,7 +1040,8 @@ local function startView(msg)
     m.gameState = 0
     player = m
     C.lists, C.interp = {}, setmetatable({}, { __mode = "k" })
-    C.lastAt, C.interval = love.timer.getTime(), 0.05
+    C.lastAt, C.interval, C.avgGap, C.peakGap = love.timer.getTime(), 0.05, nil, nil
+    C.viewStartAt = love.timer.getTime() -- the "WATCHING" banner fades from here (option watchBanner)
     C.hostName = type(msg.host) == "string" and msg.host or "Host"
     applySnap(msg)
     if type(msg.cam) == "table" then
@@ -1102,7 +1103,14 @@ function battle.onHostMessage(msg)
         local now = love.timer.getTime()
         local gap = now - C.lastAt
         C.lastAt = now
-        C.interval = math.max(0.03, math.min(0.25, C.interval * 0.8 + gap * 0.2))
+        -- How long one move is smoothed over. Over a long connection updates come in clumps
+        -- (several at once, then a gap); smoothing over the AVERAGE gap made soldiers dash
+        -- and stall (owner, 2026-11-12: jitter at 60/s, 172 ms). So it is the longest recent
+        -- gap (halving every second), never less than the average: a move is still under way
+        -- when the next clump lands.
+        C.avgGap = (C.avgGap or gap) * 0.8 + gap * 0.2
+        C.peakGap = math.max(gap, (C.peakGap or gap) * 0.5 ^ math.min(gap, 1))
+        C.interval = math.max(0.03, math.min(0.25, math.max(C.avgGap, C.peakGap)))
         applySnap(msg)
         if type(msg.n) == "number" then C.lastN = msg.n end -- reported back: the automatic rate
     elseif msg.t == "bend" then
@@ -1313,6 +1321,8 @@ function battle.beforeDraw()
     end
 end
 
+local BANNER_SHOWN = 5 -- seconds the "WATCHING" banner stays before fading (watchBanner = 2)
+
 function battle.drawOverlay()
     if not C then return end
     if C.hostChoosing then
@@ -1356,24 +1366,36 @@ function battle.drawOverlay()
     local font = nonoFont or love.graphics.getFont()
     local text = "WATCHING " .. C.hostName:upper() .. "'S BATTLE"
     local sub = "Esc twice to leave"
+    -- the banner in battle: option watchBanner (owner, 2026-11-12: "a way to get rid of it")
+    -- 1 always, 2 fades after a few seconds (default), 3 hidden. It always shows when it has
+    -- something to say: on the mission report, and after a first Esc.
+    local alpha = 1
+    local asked = battle.leaveAskedAt and love.timer.getTime() - battle.leaveAskedAt < 3
     if battle.inDebrief() then
         text = C.hostName:upper() .. "'S MISSION REPORT"
         sub = C.hostLeft and "The host has left the report. Back: return to the lobby"
             or "Back: return to the lobby whenever you like"
-    end
-    if battle.leaveAskedAt and love.timer.getTime() - battle.leaveAskedAt < 3 then
+    elseif asked then
         sub = "Press Esc again to leave the co-op session"
+    else
+        local mode = tonumber(net.option("watchBanner", 2)) or 2
+        if mode == 3 then return end
+        if mode == 2 then
+            local t = love.timer.getTime() - (C.viewStartAt or 0)
+            alpha = math.max(0, math.min(1, BANNER_SHOWN + 1 - t))
+            if alpha <= 0 then return end
+        end
     end
     love.graphics.push("all")
     love.graphics.origin()
     love.graphics.setFont(font)
     local w = math.max(font:getWidth(text), font:getWidth(sub)) + 24
     local x = (love.graphics.getWidth() - w) / 2
-    love.graphics.setColor(0, 0, 0, 0.6)
+    love.graphics.setColor(0, 0, 0, 0.6 * alpha)
     love.graphics.rectangle("fill", x, 6, w, font:getHeight() * 2 + 14, 4)
-    love.graphics.setColor(1, 0.85, 0.4, 1)
+    love.graphics.setColor(1, 0.85, 0.4, alpha)
     love.graphics.printf(text, x, 11, w, "center")
-    love.graphics.setColor(0.85, 0.85, 0.85, 1)
+    love.graphics.setColor(0.85, 0.85, 0.85, alpha)
     love.graphics.printf(sub, x, 13 + font:getHeight(), w, "center")
     love.graphics.pop()
 end

@@ -459,6 +459,26 @@ function defense.sortVehicles(n0, side)
     end
 end
 
+-- The game gives every vehicle its own engine/track/wheel sounds as globals named by its id
+-- (_G["bikeIdle"..id] = bikeIdle:clone(), urb_engine.lua:29923-36959) and vehicleSound plays
+-- them without checking (urb_engine.lua:21463). A twin has a new id, so it needs its own
+-- copies, or the game crashes the first time it starts the twin's engine (owner's crash,
+-- 2026-11-12: bikeIdle<id>, urb_engine.lua:21531).
+local VEHICLE_SOUNDS = { "jeepIdle", "opelIdle", "opelWheel", "deuceIdle", "clownIdle", "goliathIdle", "bikeIdle",
+    "horseCartIdle", "horseCartTrack", "tankTurretMove", "medTankIdle", "lightTankIdle", "hvyTankIdle", "hvyTankIdle2",
+    "pantherIdle", "panzerTrackSound", "stugTrackSound", "tigerTrackSound", "pantherTrackSound" }
+
+function defense.copyVehicleSounds(fromId, toId)
+    if fromId == nil or toId == nil then return end
+    for _, name in ipairs(VEHICLE_SOUNDS) do
+        local src = rawget(_G, name .. fromId)
+        if src ~= nil and rawget(_G, name .. toId) == nil then
+            local ok, c = pcall(function() return src:clone() end)
+            if ok and c then _G[name .. toId] = c end
+        end
+    end
+end
+
 -- A normal wave's vehicles since index n0: each stays right and gets a mirrored twin on the
 -- left (its own tables: buff, passenger counts...). Those that can't go left (Goliaths,
 -- artillery, side carts) stay single, on the right.
@@ -473,6 +493,8 @@ function defense.twinVehicles(n0)
                 local twin = copySoldier(v, 1)
                 twin.id = newId()
                 twin.coopSide = nil
+                defense.copyVehicleSounds(v.id, twin.id)
+                twin.trackSoundStarted, twin.idleSoundStarted = 0, 0 -- its own sounds haven't started
                 defense.sendVehicleLeft(twin)
                 vs[#vs + 1] = twin
             end

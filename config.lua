@@ -36,6 +36,15 @@ return {
             description = "When a teammate's game falls behind the battle (their connection can't keep up), the host sends fewer updates per second, and goes back up once they've caught up. Never above the rate chosen above.",
         },
         {
+            id = "watchBanner",
+            label = "Watching banner (teammate's screen)",
+            type = "cycle",
+            default = 2,
+            options = { 2, 1, 3 },
+            labels = { "Fades after 5 s", "Always shown", "Hidden" },
+            description = "The banner at the top middle of a teammate's screen during the host's battle. It still shows on the mission report and after a first Esc (press Esc again to leave).",
+        },
+        {
             id = "classicDefense",
             label = "Co-op Classic: defend the middle",
             type = "checkbox",
