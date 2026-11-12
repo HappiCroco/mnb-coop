@@ -314,6 +314,17 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   meant to overwhelm). Size control was scaled (12/24); crowd control after wave 100 (mnb2.lua:639, (realSquadSizer −
   12)% → spawnCombinedForce) now uses coopSizeLimit × 2 (24 in co-op Classic), and its Combined Force is wrapped
   like a special wave (whole, one side, not twinned).
+- (v0.9.11) Co-op Classic has its own Classic profile (owner: it must never touch the real rank, ribbons or counters
+  like totalMNB2Game). `campaign.classic` (coop_campaign.lua) uses the campaign's file redirect with `coop/classic/`:
+  `saveMNB2.lua` (menu_classicButton, urb_engine.lua:39939), and also `saveMNB3.lua` and `backUp.lua`, because leaving
+  Classic loads the campaign save and copies the Classic stats into it (postMNB2Mission, mnb2.lua:1142-1192) and
+  Back on the mode select loads it too; a stand-in campaign profile lives in `coop/classic/saveMNB3.lua` so the real
+  one is never read. `enter()` (CO-OP CLASSIC tile) puts the stand-in in `player` (fresh by the game's newProfile on
+  the first game, settings copied in) and the game's own button then creates/loads the Classic profile; `exit()`
+  saves what is loaded and puts the real `player` back (settings carried back, `mnb3Tomnb2_maxWave` restored: the
+  game hands it to the next Classic profile). It runs when the menus come back to the lobby page or the main menu
+  (every menu frame), on Back from the lobby, when the co-op campaign opens, and on quit. Never active together
+  with the campaign. Not covered: Steam stats/achievements the Classic code sends (steam_classicWaves, ...). Test: classictest.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.
@@ -336,8 +347,8 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - Not yet: r35/brestCannon crew spot follows only the host's selection.
 
 ## Co-op Classic: DEFENSE (owner's design 2026-11-11; built v0.9.0, headless test 26 checks, not yet in-game)
-- CO-OP CLASSIC tile (host/offline) → leaves the co-op campaign save → the game's Classic (its own saveMNB2, the
-  host's Classic rank) → the player picks a Classic mode. Plain modes (0-6, 9) get the defense layout; para (7),
+- CO-OP CLASSIC tile (host/offline) → leaves the co-op campaign save → the game's Classic on its own co-op Classic
+  profile (`coop/classic/`, v0.9.11; not the host's real Classic rank) → the player picks a Classic mode. Plain modes (0-6, 9) get the defense layout; para (7),
   trench (8, 10) and special events (99) play as usual. Option `classicDefense` (default on) turns it off.
 - Layout (after preMNB2Admin): squad in a ring around a radar at the map's middle (endLine/2, y 360), camera there.
   The radar uses its own placeable names `coopRadar`/`coopRadarTop` (pictures = the game's radarBase/radarTop) so

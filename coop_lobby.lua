@@ -274,7 +274,7 @@ function lobby.registerButtons()
         (canStart and "\nCampaign starts the next mission for everyone." or "\nThe host starts the missions.") ..
         "\nYour own campaign is not touched.")
     addButton(805, 185, 200, 465, "coopClassic", canStart
-        and "Co-op Classic, DEFENSE: your squads start in the middle around a radar,\nthe Germans come from both sides. Ten of them at the radar and it's over.\nPick a Classic mode next (trench and para modes play as usual).\nThe game's Classic save is used (your Classic rank)."
+        and "Co-op Classic, DEFENSE: your squads start in the middle around a radar,\nthe Germans come from both sides. Ten of them at the radar and it's over.\nPick a Classic mode next (trench and para modes play as usual).\nIt has its own Classic profile: your real Classic rank and ribbons are not touched."
         or "The host starts the battle. You'll be pulled in when it begins.")
     addButton(1030, 185, 200, 465, "coopOptions", "Co-op settings (port, debug log)")
     if net.role == "host" or net.role == "offline" then
@@ -304,6 +304,7 @@ function coopBackButton()
     click()
     lobby.fieldFocus = false
     if campaign.active then campaign.exit() end -- leaving the lobby = back to your own save
+    campaign.classic.exit() -- same for the co-op Classic profile
     menuPage = 1
     mouseOverText = ""
 end
@@ -499,6 +500,12 @@ function coopClassicButton()
     end
     if not net.readyToStart() then return end -- every friend's READY first (it names who's missing)
     if campaign.active then pcall(campaign.exit) end -- Classic has its own save
+    -- co-op Classic runs on its own Classic profile (coop/classic), never the real one
+    local ok, why = campaign.classic.enter()
+    if not ok then
+        if mnbCoop and mnbCoop.notice then mnbCoop.notice("Co-op Classic: " .. tostring(why)) end
+        return
+    end
     click()
     mouseOverText = ""
     lobby.fieldFocus = false
