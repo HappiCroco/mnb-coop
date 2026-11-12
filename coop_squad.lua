@@ -227,6 +227,15 @@ local function promoAllowed(t, label)
 end
 squad.promoAllowed = promoAllowed
 
+-- a coordinate from a friend: a finite number on (or near) the map, else nil. The codec
+-- reads "inf" as a number; an infinite target would end in NaN positions in the game.
+local function coord(v)
+    v = tonumber(v)
+    if not v or v ~= v then return nil end
+    return math.max(-2000, math.min(20000, v))
+end
+squad.coord = coord
+
 -- an order from a seated player; returns true if it is a kind we know
 function squad.onClientMessage(seat, msg)
     local t = msg.t
@@ -236,7 +245,7 @@ function squad.onClientMessage(seat, msg)
     end
     if type(player) ~= "table" or player.gameState ~= 0 or #queue >= 32 then return true end -- late or flooding
     if t == "hud" then
-        local x, y, cx, cy = tonumber(msg.x), tonumber(msg.y), tonumber(msg.cx), tonumber(msg.cy)
+        local x, y, cx, cy = coord(msg.x), coord(msg.y), coord(msg.cx), coord(msg.cy)
         if squad.hudLabelOk(msg.label) and x and y and cx and cy then
             local ids = {}
             if type(msg.ids) == "table" then
@@ -262,7 +271,7 @@ function squad.onClientMessage(seat, msg)
     elseif t == "halt" or t == "altgo" or t == "cancel" then
         queue[#queue + 1] = { kind = t, seat = seat }
     else
-        local x, y = tonumber(msg.x), tonumber(msg.y)
+        local x, y = coord(msg.x), coord(msg.y)
         if not x or not y or type(msg.ids) ~= "table" then return true end
         local ids = {}
         for i = 1, math.min(#msg.ids, MAX_ORDER_IDS) do
@@ -597,12 +606,33 @@ local function runHud(o)
     mousePrompt, mousePrompter, mousePromptLock = armed and armed.p or 0, armed and armed.who or 0, 0
     mnb2MenuDisplay, buttoned, iconOn = o.menu, 0, 0
     player.screenx, player.screeny = o.cx, o.cy
+    -- only a button the game itself shows them right now (their menu page, selection and
+    -- camera, the game's own HUD pass): the label alone could name any mnb2*/trench* Button
+    -- function, including ones meant for the main menu or another mode (security pass,
+    -- 2026-11-12, after Gamiseus's review)
+    local offered = true
+    local engine = squad.gameButtonEngine
+    if type(engine) == "function" then
+        local sc, bc, mo1, mo2 = soundCpt, butCpt, mouseOverId, mouseOverId2
+        soundCpt, butCpt = -1e9, 1 -- build the buttons now, no chatter or ambient sounds
+        local okE = pcall(engine, 0)
+        soundCpt, butCpt, mouseOverId, mouseOverId2 = sc, bc, mo1, mo2
+        offered = false
+        if okE then
+            for _, b in ipairs(type(buttons) == "table" and buttons or {}) do
+                if type(b) == "table" and b.label == o.label then offered = true break end
+            end
+        end
+    end
     local count = #troops
     replaying = true
-    local ok, err = withMouseAt(o.x, o.y, function()
+    local ok, err = true, nil
+    if not offered then
+        log("seat %d pressed %s: not on their screen, refused", o.seat, o.label)
+    else ok, err = withMouseAt(o.x, o.y, function()
         local b = Button.new(-1e9, -1e9, 2e9, 2e9, o.label, "active", true, "")
         b.click(o.label)
-    end)
+    end) end
     replaying = false
     player.screenx, player.screeny, player.masterScreenx, player.masterScreeny = cam[1], cam[2], cam[3], cam[4]
     -- soldiers that arrived with this click are the friend's
@@ -840,7 +870,10 @@ end
 -- know where its buttons are and what their tooltips say, with the game's random
 -- battle chatter part skipped (soundCpt) and sounds muted as always while watching.
 local gameButtonEngine = nil
-function squad.setGameButtonEngine(fn) gameButtonEngine = fn end
+function squad.setGameButtonEngine(fn)
+    gameButtonEngine = fn
+    squad.gameButtonEngine = fn -- (runHud, above, checks offered buttons with it)
+end
 squad.hudButtons = {}
 
 function squad.clientHud()

@@ -2,14 +2,17 @@
 -- a real lobby over enet on localhost (join code, version check, kick, leave) and the guard.
 local MOD = os.getenv("COOP_DIR")
 local function pre(name, file)
-  package.preload[name] = function() return assert(loadfile(MOD .. "/" .. file))() end
+    package.preload[name] = function() return assert(loadfile(MOD .. "/" .. file))() end
 end
 pre("includes/mods/mnb_coop/coop_codec", "coop_codec.lua")
 pre("includes/mods/mnb_coop/coop_profile", "coop_profile.lua")
 pre("includes/mods/mnb_coop/coop_net", "coop_net.lua")
 
 local fails, passes = 0, 0
-local function check(cond, what) if cond then passes = passes + 1 else fails = fails + 1 print("FAIL: " .. what) end end
+local function check(cond, what) if cond then passes = passes + 1 else
+        fails = fails + 1
+        print("FAIL: " .. what)
+    end end
 
 -- codec
 local codec = require("includes/mods/mnb_coop/coop_codec")
@@ -19,7 +22,12 @@ check(back and back.t == "x" and back.n == 3 and back.f == 1.5 and back.b == tru
 check(codec.decode("s999:abc") == nil, "codec rejects bad length")
 check(codec.decode("t5;") == nil, "codec rejects truncated table")
 check(codec.decode("return os.exit()") == nil, "codec rejects code")
-local deep = {} local cur = deep for i = 1, 20 do cur.x = {} cur = cur.x end
+local deep = {}
+local cur = deep
+for i = 1, 20 do
+    cur.x = {}
+    cur = cur.x
+end
 check(not pcall(codec.encode, deep), "codec refuses deep encode")
 check(codec.decode(("t1;n1;"):rep(30) .. "N") == nil, "codec rejects deep decode")
 
@@ -28,7 +36,10 @@ currentVersion = "0.5.3b"
 player = { rank = 5, mnb2Rank = 3, ribs = { 7, 12 }, eyes = 2, nose = 3, mouth = 4, hair = 5 }
 rankTell = function(n) return "Rank" .. n end
 mnb2RankTell = function(n) return "Cmd" .. n end
-for i = 1, 13 do _G["playerRank" .. i] = true _G["command_" .. i] = true end
+for i = 1, 13 do
+    _G["playerRank" .. i] = true
+    _G["command_" .. i] = true
+end
 _G.rib7, _G.rib12 = true, true
 _G.ribName_7, _G.ribDesc_7 = "Seven", "desc"
 modLibrary = { option = function() return nil end, debugLog = function() end }
@@ -60,9 +71,12 @@ local big = codec.encode({ t = "avatar", data = ("PNG\0\1\2"):rep(9000) }) -- ~5
 net._put(fakePeer, big, 0)
 local biggest, whole = 0, nil
 for i, w in ipairs(wire) do
-  biggest = math.max(biggest, #w.data)
-  local got = net._reassemble(fakePeer, 0, w.data, 200 * 1024)
-  if got then whole = got check(i == #wire, "whole only after the last piece") end
+    biggest = math.max(biggest, #w.data)
+    local got = net._reassemble(fakePeer, 0, w.data, 200 * 1024)
+    if got then
+        whole = got
+        check(i == #wire, "whole only after the last piece")
+    end
 end
 check(#wire > 50 and biggest <= net.CHUNK, "split into " .. #wire .. " pieces, largest " .. biggest .. " bytes")
 check(whole == big and codec.decode(whole).t == "avatar", "reassembled exactly")
@@ -72,15 +86,22 @@ check(#wire == 1 and wire[1].data:byte(1) ~= 0 and net._reassemble(fakePeer, 0, 
 check(select(2, net._reassemble({}, 0, "\0" .. 999999 .. ":x", 200 * 1024)) == "bad", "a piece claiming too big a total is refused")
 
 local function freshNet()
-  package.loaded["includes/mods/mnb_coop/coop_net"] = nil
-  return require("includes/mods/mnb_coop/coop_net")
+    package.loaded["includes/mods/mnb_coop/coop_net"] = nil
+    return require("includes/mods/mnb_coop/coop_net")
 end
 local hostNet = net
 local PORT = 47999
 local ADDR = "127.0.0.1:" .. PORT
 local clients = {}
-local function pump(n) for i = 1, n do hostNet.update() for _, cl in ipairs(clients) do cl.update() end love.timer.sleep(0.01) end end
-local function waitSec(s) local t0 = love.timer.getTime() while love.timer.getTime() - t0 < s do pump(1) end end
+local function pump(n) for i = 1, n do
+        hostNet.update()
+        for _, cl in ipairs(clients) do cl.update() end
+        love.timer.sleep(0.01)
+    end end
+local function waitSec(s)
+    local t0 = love.timer.getTime()
+    while love.timer.getTime() - t0 < s do pump(1) end
+end
 
 -- ---- lobby with a join code (the default)
 check(hostNet.hostGame(PORT), "host opens port")
@@ -102,19 +123,28 @@ pump(60)
 check(c2.mySeat == 3 and hostNet.playerCount() == 3, "second client seated")
 waitSec(1.2)
 check(c1.playerCount() == 3 and c2.playerCount() == 3, "clients see 3 players")
-c1.setReady(true) hostNet.setReady(true) c2.setReady(true)
+c1.setReady(true)
+hostNet.setReady(true)
+c2.setReady(true)
 waitSec(1.2)
 check(hostNet.allReady() and c2.seats[2] and c2.seats[2].ready, "ready synced")
 -- a big avatar over real enet (sent in pieces): it arrives, nobody is dropped for "flooding",
 -- and the lobby keeps flowing after it (owner, 2026-11-11: a friend stuck at 0/3)
-local png = "\137PNG\r\n\26\n" .. ("x"):rep(60 * 1024)
+local function pngHead(w, h)
+  local function u32(n) return string.char(math.floor(n / 16777216) % 256, math.floor(n / 65536) % 256, math.floor(n / 256) % 256, n % 256) end
+  return "\137PNG\r\n\26\n" .. u32(13) .. "IHDR" .. u32(w) .. u32(h) .. "\8\6\0\0\0"
+end
+check(profile.isPng(pngHead(184, 184) .. "rest") and not profile.isPng(pngHead(30000, 30000) .. "rest")
+  and not profile.isPng("\137PNG\r\n\26\nshort"), "avatars: a PNG claiming huge pixel sizes is refused before decoding")
+local png = pngHead(184, 184) .. ("x"):rep(60 * 1024)
 c1.sendToHost({ t = "avatar", data = png })
 waitSec(1.5)
 check(hostNet.playerCount() == 3 and c1.role == "client", "big avatar: nobody dropped")
 check(c2.playerCount() == 3 and c2.seats[2] and c2.seats[2].ready, "lobby still arrives after it")
 
 -- version mismatch
-local c3 = freshNet() c3.VERSION = "9.9.9"
+local c3 = freshNet()
+c3.VERSION = "9.9.9"
 clients = { c1, c2, c3 }
 c3.join(ADDR .. "#" .. code)
 pump(80)
@@ -146,10 +176,10 @@ local silent = raw:connect(ADDR, 2)
 local t0 = love.timer.getTime()
 local gotDisconnect = false
 while love.timer.getTime() - t0 < hostNet.GUARD.HELLO_TIMEOUT + 1.5 do
-  hostNet.update()
-  local e = raw:service(0)
-  if e and e.type == "disconnect" then gotDisconnect = true end
-  love.timer.sleep(0.01)
+    hostNet.update()
+    local e = raw:service(0)
+    if e and e.type == "disconnect" then gotDisconnect = true end
+    love.timer.sleep(0.01)
 end
 check(gotDisconnect and hostNet.blocked > blockedBefore, "silent connection dropped after timeout")
 -- 2. junk earns strikes, then a drop
@@ -157,13 +187,15 @@ local raw2 = enet.host_create()
 local junk = raw2:connect(ADDR, 2)
 local dropped2, sent = false, false
 for i = 1, 120 do
-  hostNet.update()
-  local e = raw2:service(0)
-  if e and e.type == "connect" and not sent then
-    sent = true
-    for k = 1, 6 do junk:send("t99999;garbage" .. k) end
-  elseif e and e.type == "disconnect" then dropped2 = true end
-  love.timer.sleep(0.01)
+    hostNet.update()
+    local e = raw2:service(0)
+    if e and e.type == "connect" and not sent then
+        sent = true
+        for k = 1, 6 do junk:send("t99999;garbage" .. k) end
+    elseif e and e.type == "disconnect" then
+        dropped2 = true
+    end
+    love.timer.sleep(0.01)
 end
 check(dropped2, "junk sender dropped after strikes")
 -- 3. flooding (valid-looking messages, too many) is cut off
@@ -171,13 +203,15 @@ local raw3 = enet.host_create()
 local flood = raw3:connect(ADDR, 2)
 local dropped3, flooded = false, false
 for i = 1, 150 do
-  hostNet.update()
-  local e = raw3:service(0)
-  if e and e.type == "connect" and not flooded then
-    flooded = true
-    for k = 1, 200 do flood:send(codec.encode({ t = "ready", on = true })) end
-  elseif e and e.type == "disconnect" then dropped3 = true end
-  love.timer.sleep(0.01)
+    hostNet.update()
+    local e = raw3:service(0)
+    if e and e.type == "connect" and not flooded then
+        flooded = true
+        for k = 1, 200 do flood:send(codec.encode({ t = "ready", on = true })) end
+    elseif e and e.type == "disconnect" then
+        dropped3 = true
+    end
+    love.timer.sleep(0.01)
 end
 check(dropped3, "flooder dropped")
 -- 3b. byte flooding with big packets in one piece (few messages, many bytes) is cut off too
@@ -186,13 +220,15 @@ local bigFlood = raw5:connect(ADDR, 2)
 local dropped5, sent5 = false, false
 local blob = codec.encode({ t = "ready", pad = ("x"):rep(150 * 1024) })
 for i = 1, 200 do
-  hostNet.update()
-  local e = raw5:service(0)
-  if e and e.type == "connect" and not sent5 then
-    sent5 = true
-    for k = 1, 4 do bigFlood:send(blob) end -- 600 KB in 4 messages: over the 400 KB/s byte limit
-  elseif e and e.type == "disconnect" then dropped5 = true end
-  love.timer.sleep(0.01)
+    hostNet.update()
+    local e = raw5:service(0)
+    if e and e.type == "connect" and not sent5 then
+        sent5 = true
+        for k = 1, 4 do bigFlood:send(blob) end -- 600 KB in 4 messages: over the 400 KB/s byte limit
+    elseif e and e.type == "disconnect" then
+        dropped5 = true
+    end
+    love.timer.sleep(0.01)
 end
 check(dropped5, "big unsplit packets count their bytes: byte flooder dropped")
 check(hostNet.playerCount() == 1 and hostNet.role == "host", "host still fine after attacks (blocked " .. hostNet.blocked .. ")")

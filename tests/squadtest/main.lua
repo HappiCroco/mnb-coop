@@ -175,6 +175,23 @@ check(rookie.perks[1] == 3, "rookie gets the D-Day perk")
 local god = campaign.sanitize({ xp = 99999, level = 40, skill = 999, health = 5000, maxHealth = 9000, promo = 50 })
 check(god.xp == 10000 and god.level == 11 and god.skill == 150 and god.maxHealth == 400 and god.health == 400 and god.promo == 11,
   "impossible values clamped")
+-- crafted names the game would look up as sprites/texts: replaced by safe ones
+spec_medic, spec_, allied_idle, face_eyes2, perk_1, perk_2, award5 = {}, {}, {}, {}, {}, {}, {}
+local savedWC = weaponCreator
+weaponCreator = function(w, tag)
+  w.tag = (tag == "m1" or tag == "tommy") and tag or "k98"
+  w.damage, w.maxAmmo = 40, 8
+end
+local bad = campaign.sanitize({ spec = "medic", state = "nope", eyes = 2, nose = 99, perks = { 1, 2, 999, "x" },
+  awards = { { name = "Star", icon = 5, called = 0 }, { name = "Bad", icon = 4000 } },
+  weapon = { tag = "tommy", damage = 99999, ammo = 500 }, name = ("N"):rep(500), stress = 1 / 0 })
+check(bad.spec == "medic" and bad.state == "idle" and bad.eyes == 2 and bad.nose == 1, "spec/state/face: known ones kept, others reset")
+check(#bad.perks == 2 and #bad.awards == 1 and bad.awards[1].icon == 5, "only perks and awards the game has pictures for")
+check(bad.weapon.tag == "tommy" and bad.weapon.damage == 40 and bad.weapon.ammo == 8, "weapon rebuilt from its tag (no crafted damage)")
+check(#bad.name == 40 and bad.stress == 0, "long names cut, infinite numbers zeroed")
+check(campaign.sanitize({ spec = "hacker" }).spec == "", "an unknown spec becomes none")
+weaponCreator = savedWC
+spec_medic, spec_, allied_idle, face_eyes2, perk_1, perk_2, award5 = nil, nil, nil, nil, nil, nil, nil
 
 -- ---- New war: day 1 again, the six soldiers come along
 player.dayz, player.gainz = 30, 25

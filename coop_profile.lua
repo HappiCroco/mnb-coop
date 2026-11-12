@@ -108,8 +108,19 @@ local function readBinary(path)
     return data
 end
 
+-- A PNG we'll decode: also small in pixels (the IHDR chunk's width and height, bytes
+-- 17-24). A few KB of PNG can claim 30000x30000 pixels, gigabytes once decoded on the
+-- host and every friend. Steam avatars are 184x184.
+local MAX_AVATAR_SIDE = 512
 function profile.isPng(data)
-    return type(data) == "string" and #data > 8 and #data <= MAX_AVATAR and data:sub(1, 8) == "\137PNG\r\n\26\n"
+    if type(data) ~= "string" or #data < 33 or #data > MAX_AVATAR or data:sub(1, 8) ~= "\137PNG\r\n\26\n" then return false end
+    if data:sub(13, 16) ~= "IHDR" then return false end
+    local function u32(i)
+        local a, b, c, d = data:byte(i, i + 3)
+        return ((a * 256 + b) * 256 + c) * 256 + d
+    end
+    local w, h = u32(17), u32(21)
+    return w >= 1 and h >= 1 and w <= MAX_AVATAR_SIDE and h <= MAX_AVATAR_SIDE
 end
 
 -- Bytes of our own avatar PNG, or nil.

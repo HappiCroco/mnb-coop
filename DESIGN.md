@@ -352,6 +352,26 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
 - TP: shared pool by default (true co-op); option to split TP income per seat.
 - A client that leaves gives its troops back to the host.
 
+## Security pass (2026-11-12, after Gamiseus reviewed the code: "how can the built-in systems be used to mess
+with the data that DOES get sent?")
+Already in place: data-only codec (no load), depth/size limits, the connection guard (join code, hello timeout,
+strikes, message/byte rates), ownership checks on every order, host-only buttons, saves blocked while watching,
+image paths checked, debrief globals by name pattern, every client draw/update in pcall.
+Fixed in v0.9.7:
+- **HUD buttons:** a label only names a `<label>Button` function. The host now runs the game's own HUD pass for the
+  friend's menu page, selection and camera and refuses a label that isn't on their screen (any mnb2*/trench* Button
+  function could be called before, e.g. main-menu ones mid-battle).
+- **Soldiers from the network** (rosters to the host, results to a friend): fields the game turns into sprite/text
+  names must name something loaded (spec, state, face parts, perks 1..21, nextPerk, award icons), the weapon is
+  rebuilt from its tag by weaponCreator (no crafted damage/range/rof), numbers finite (|v| <= 1e9), strings <= 64
+  (names 40). A bad value used to break the drawing on every machine showing that soldier.
+- **Avatars:** the PNG header's pixel size must be <= 512x512 before decoding (a few KB can claim 30000x30000).
+- **Coordinates** from friends: finite and clamped to the map (the codec accepts "inf").
+- **Byte guard:** big packets sent in one piece count their bytes (v0.9.6).
+Accepted, low risk: a hostile host can still send huge (bounded: 64 MB, 4M items) or zlib-bomb snapshots to the
+friends who chose to join it, and set `temp*`/`box*Timer`-style debrief globals (drawing errors are caught and
+shown; the friend's own globals come back when they leave).
+
 ## Scope and phases
 1. **Lobby + connection** (built 2026-11-11, v0.2.0; headless tests pass, not yet tried in-game). Main-menu entry is
    "Multiplayer" on the bottom bar (owner's choice), placed right of whatever buttons are there: CO-OP tile, lobby page, 4 cards (avatar, name, showcase), host/join/leave, ready, handshake.

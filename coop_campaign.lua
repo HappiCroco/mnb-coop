@@ -352,8 +352,59 @@ local function sanitize(s)
     if type(t.weapon) ~= "table" then t.weapon = {} end
     if type(t.perks) ~= "table" then t.perks = {} end
     if type(t.awards) ~= "table" then t.awards = {} end
-    if type(t.coopUid) ~= "string" then t.coopUid = nil end
+    if type(t.coopUid) ~= "string" or #t.coopUid > 40 then t.coopUid = nil end
     for _, k in ipairs(BATTLE_TAGS) do t[k] = nil end
+
+    -- Fields the game turns into sprite or text names (security pass 2026-11-12): a value
+    -- it never makes would make its drawing code fail on every machine that shows him.
+    -- Each must name something the game has loaded; otherwise a safe default.
+    local function loaded(name) return rawget(_G, name) ~= nil end
+    -- every number finite and sane, every string short
+    for k, v in pairs(t) do
+        if type(v) == "number" and (v ~= v or v > 1e9 or v < -1e9) then t[k] = 0
+        elseif type(v) == "string" and #v > 64 then t[k] = v:sub(1, 64) end
+    end
+    if type(t.name) == "string" then t.name = t.name:sub(1, 40) end
+    if type(t.spec) ~= "string" or not loaded("spec_" .. t.spec) then t.spec = "" end -- drawFiles.lua:1273
+    if type(t.state) ~= "string" or not loaded("allied_" .. t.state) then t.state = "idle" end -- drawFiles.lua:513
+    for _, part in ipairs({ "eyes", "nose", "mouth", "hair" }) do -- urb_engine.lua:7969-7972
+        local n = tonumber(t[part])
+        if not n or not loaded("face_" .. part .. n) then t[part] = 1 end
+    end
+    -- perks: ids with a perk picture (1..21, main.lua:528), no more than there are
+    local perks = {}
+    for _, n in ipairs(t.perks) do
+        n = tonumber(n)
+        if n and n == math.floor(n) and loaded("perk_" .. n) and #perks < 21 then perks[#perks + 1] = n end
+    end
+    t.perks = perks
+    local np = tonumber(t.nextPerk)
+    local names = rawget(_G, "perks")
+    if t.nextPerk ~= nil and not (np and type(names) == "table" and names[np] and loaded("perkText" .. np)) then
+        t.nextPerk = nil
+        if type(assignNextPerk) == "function" then pcall(assignNextPerk, t) end
+    end
+    -- awards: { name, called, icon } with an award picture (urb_engine.lua:41243, drawFiles.lua:3457)
+    local awards = {}
+    for _, a in ipairs(t.awards) do
+        local icon = type(a) == "table" and tonumber(a.icon)
+        if icon and loaded("award" .. icon) and #awards < 100 then
+            awards[#awards + 1] = { name = tostring(a.name or ""):sub(1, 60), called = tonumber(a.called) == 0 and 0 or 1, icon = icon }
+        end
+    end
+    t.awards = awards
+    -- the weapon, rebuilt from its tag by the game (weaponCreator, urb_engine.lua:12876: an
+    -- unknown tag becomes a k98), so no crafted damage, range or rate of fire comes along.
+    -- Nothing else changes a weapon's stats for good (only a battle condition, bcChecks.lua:558).
+    if type(weaponCreator) == "function" then
+        local old = t.weapon
+        local w = {}
+        if pcall(weaponCreator, w, type(old.tag) == "string" and old.tag or "m1") then
+            local ammo = tonumber(old.ammo)
+            if ammo and tonumber(w.maxAmmo) then w.ammo = math.max(0, math.min(ammo, w.maxAmmo)) end
+            t.weapon = w
+        end
+    end
     return t
 end
 campaign.sanitize = sanitize

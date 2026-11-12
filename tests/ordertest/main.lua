@@ -444,6 +444,9 @@ local hudFake = function()
               Button.new(1110 + player.screenx - 23, 690 + player.screeny - 23, 40, 40, "mnb2CallRiflez"),
               Button.new(player.screenx, 0, 10, 10, "troop_3") }
   buttons[1].mouseOverText, buttons[2].mouseOverText = "Reinforcements", "Riflemen"
+  -- buttons of a menu page show only on that page, like the game's
+  if mnb2MenuDisplay == 3 then buttons[#buttons + 1] = Button.new(0, 0, 40, 40, "mnb2Smoke") end
+  if mnb2MenuDisplay == 5 then buttons[#buttons + 1] = Button.new(0, 0, 40, 40, "mnb2GearscopedGarand") end
 end
 squad.setGameButtonEngine(hudFake)
 soundCpt, butCpt = 0.05, 0
@@ -507,6 +510,17 @@ squad.hostRunOrders()
 local pm
 for _, m in ipairs(toSeat) do if m.msg.t == "prompt" then pm = m.msg end end
 check(pm and pm.p == 28 and mousePrompt ~= 28, "a radio strike arms her prompt, not the host's")
+-- a button that isn't on her screen (wrong menu page: a crafted message) is refused
+squad.onClientMessage(2, { t = "cancel" })
+squad.hostRunOrders()
+toSeat = {}
+squad.onClientMessage(2, { t = "hud", label = "mnb2Smoke", x = 1, y = 1, cx = 0, cy = 0, ids = {}, menu = 0 })
+squad.hostRunOrders()
+pm = nil
+for _, m in ipairs(toSeat) do if m.msg.t == "prompt" and m.msg.p == 28 then pm = m.msg end end
+check(pm == nil, "a button not on her screen is refused")
+check(squad.coord("inf") == 20000 and squad.coord(0 / 0) == nil and squad.coord(1e30) == 20000 and squad.coord(512) == 512,
+  "coordinates from friends: finite and on the map")
 squad.onClientMessage(2, { t = "cancel" })
 squad.hostRunOrders()
 table.remove(player.deployedTroops) -- the recruit leaves the test
