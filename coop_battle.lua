@@ -1149,6 +1149,8 @@ function battle.noteDrawError(err)
     end
     local first = tostring(err):match("^[^\n]*") or "?"
     C.drawError = first
+    -- shown as an error pop-up (mnb_coop_main), kept up while it keeps happening
+    if mnbCoop and mnbCoop.toast then pcall(mnbCoop.toast, "error", "part of the battle could not be drawn: " .. first, true) end
     C.loggedErrors = C.loggedErrors or {}
     if not C.loggedErrors[first] then
         C.loggedErrors[first] = true
@@ -1199,15 +1201,7 @@ function battle.drawOverlay()
         love.graphics.printf(msg, 0, 85, love.graphics.getWidth(), "center")
         love.graphics.pop()
     end
-    if C.drawError then
-        love.graphics.push("all")
-        love.graphics.origin()
-        love.graphics.setFont(nonoFont or love.graphics.getFont())
-        love.graphics.setColor(1, 0.4, 0.3, 1)
-        love.graphics.printf("Co-op: part of the battle could not be drawn (see the log):\n" .. C.drawError,
-            40, 300, love.graphics.getWidth() - 80, "center")
-        love.graphics.pop()
-    end
+    -- (a draw error shows as an error pop-up, battle.noteDrawError)
     local font = nonoFont or love.graphics.getFont()
     local text = "WATCHING " .. C.hostName:upper() .. "'S BATTLE"
     local sub = "Esc twice to leave"
