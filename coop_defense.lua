@@ -672,6 +672,45 @@ function defense.fromVehicle(t)
     return false
 end
 
+-- ---------------------------------------------------------------- our soldiers falling back
+-- Owner, 2026-11-12: "when the soldier retreats, they run to the left no matter what. They should
+-- retreat to the radio, get really close to it." The game sends a shaken soldier back to the left
+-- (alliedRetreat, urb_engine.lua:19317: x - 100..600) and a panicking one a screen to the left
+-- (ai.lua:5723: x - 1280, patched in qm.toml to call panicked). In the defense "back" is the
+-- radar: he runs to a spot close around it, on his own side of it, and the panic still runs its
+-- course there (retreating, the game's red circle) instead of off into the Germans on the left.
+defense.FALLBACK_R = 75 -- how far from the radar's middle they end up (the radar itself: 30)
+
+function defense.fallBackTarget(dude)
+    local rx, ry = defense.radarX, defense.radarY
+    local dx, dy = (dude.x or rx) - rx, (dude.y or ry) - ry
+    local d = math.sqrt(dx * dx + dy * dy)
+    if d < 1 then dx, dy, d = -1, 0, 1 end
+    -- a spot on a small ring around the radar, toward where he is, a little spread
+    local a = math.atan2(dy, dx) + (randNbr(60) - 30) * math.pi / 180
+    local r = defense.FALLBACK_R + randNbr(40) - 20
+    return math.floor(rx + math.cos(a) * r), math.floor(ry + math.sin(a) * r)
+end
+
+local function sendToRadar(dude)
+    if not defense.active() or type(dude) ~= "table" or dude.faction ~= "allied" then return end
+    if (tonumber(dude.tacDraw) or 0) > 0 then return end -- leaving on purpose (tactical withdrawal)
+    dude.targetx, dude.targety = defense.fallBackTarget(dude)
+    if type(dude.trenchHome) == "number" then dude.trenchHome = dude.targetx end
+end
+defense.panicked = sendToRadar
+
+-- alliedRetreat: the game's own (state, smoke, morale timers), then the radar instead of the left
+function defense.wrapAlliedRetreat(orig)
+    return function(dude, ...)
+        local before = type(dude) == "table" and dude.targetx
+        local r = { orig(dude, ...) }
+        -- it only moves him when no German is at arm's length (enemyCqc) and he isn't on a bridge
+        if type(dude) == "table" and dude.targetx ~= before then sendToRadar(dude) end
+        return unpack(r)
+    end
+end
+
 -- ---------------------------------------------------------------- every frame (host or solo)
 -- Before the game's frame: new Germans get a side by where they are, the left ones
 -- are kept off the game's own miss line, and a German at the radar scores.

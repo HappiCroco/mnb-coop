@@ -163,6 +163,21 @@ if mnbCoop and mnbCoop.defense then mnbCoop.defense.withdraw(player.deployedTroo
 match_indent = true
 times = 1
 
+# Co-op defense: a panicking soldier (morale 0, ai.lua:5715) runs a screen to the left; in the
+# defense he runs to the radar instead (coop_defense.lua, defense.panicked).
+[[patches]]
+[patches.pattern]
+target = "includes/ai.lua"
+pattern = '''
+soldier.targetx = soldier.targetx - 1280
+'''
+position = "after"
+payload = '''
+if mnbCoop and mnbCoop.defense then mnbCoop.defense.panicked(soldier) end
+'''
+match_indent = true
+times = 1
+
 # Co-op defense: German vehicles from the left too (coop_defense.lua, "German vehicles
 # from both sides"). vehicleUpdate backs a German vehicle up, facing left, when its target
 # is to the right (5 tests, ai.lua:3403-3534); for a left one, backing up is to the left,
