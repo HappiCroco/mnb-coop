@@ -27,7 +27,7 @@ Main menu → **Multiplayer**. The host clicks HOST and shares the address (for 
 headless tests (`tests/run_tests.bat`, needs LÖVE's `lovec.exe`) and `Launch Two Games.bat` for testing on one PC.
 
 ## Special Thanks To
-- [URB](https://x.com/urban_prophet), creator of Mud and Blood and it's series, and helping with questions of balancing.
+- [URB](https://x.com/urban_prophet), creator of Mud and Blood and its series, and helping with questions of balancing.
 - [Gamiseus](https://github.com/Gamiseus), developer of QuarterMaster, for making this powerful harness.
 
 ## AI Disclosure
