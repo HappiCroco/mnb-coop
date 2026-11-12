@@ -187,9 +187,14 @@ check(T()[1].coopUid == uids[1] and T()[6].coopUid == uids[6] and T()[3].xp == x
 local backup = false
 for _, f in ipairs(love.filesystem.getDirectoryItems("coop/campaign")) do if f:match("%.war%d+$") then backup = true end end
 check(backup, "the old war kept as a backup")
-player.coopMission = { gainz = 1 }
-check(not campaign.newWar(), "no new war in the middle of a mission")
-player.coopMission = nil
+-- a save left in the middle of a mission: New war closes the mission (soldiers home) and goes ahead
+player.coopMission = { gainz = 1, seats = { true } }
+player.coopSquadTarget = 6
+player.coopSlotSeats, player.coopSlotPos = { 1, 1, 1, 1, 1, 1 }, { 1, 2, 3, 4, 5, 6 }
+local uid1 = T()[1].coopUid
+player.dayz, player.gainz = 9, 7
+check(campaign.newWar(), "new war from a save with a mission under way")
+check(player.coopMission == nil and player.gainz == 1 and T()[1].coopUid == uid1, "mission closed, day 1, soldiers kept")
 -- fresh start: day 1 with new rookies
 check(campaign.newWar(true), "fresh start")
 local sameAny = false
