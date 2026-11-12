@@ -824,9 +824,16 @@ function squad.clientMousereleased(x, y, button)
     end
     if button ~= 1 or not press then return end
     if type(player) ~= "table" or player.gameState ~= 0 then
+        -- the mission report: nothing to order, but Back (the game's button, 32,686 60x30,
+        -- urb_engine.lua:8236) takes this friend back to the lobby whenever they like
+        -- (owner, 2026-11-12: no waiting for the host to leave the report)
         press = nil
+        -- (inline box test: inBox is defined further down this file)
+        if x > 32 and x < 92 and y > 686 and y < 716 and mnbCoop and mnbCoop.battle and mnbCoop.battle.leaveReport then
+            mnbCoop.battle.leaveReport()
+        end
         return
-    end                                                                             -- mission-end page: nothing to order
+    end
     local px, py = press.x, press.y
     press = nil
     local ox, oy = player.screenx or 0, player.screeny or 0
