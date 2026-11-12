@@ -13,6 +13,7 @@
 -- Active only in the co-op campaign with more than one player, or while watching.
 -- =============================================================================
 local net = require("includes/mods/mnb_coop/coop_net")
+local wallet = require("includes/mods/mnb_coop/coop_wallet")
 
 local squad = {}
 
@@ -551,7 +552,9 @@ squad.HUD_LOCAL = HUD_LOCAL
 -- mnb2Retreat ends the battle (ui_squadLostFade, mnb2.lua:2163), trenchRetreatz sets
 -- mnb2Miss = 10 (trench.lua:581), trenchUp/trenchRetreat move every allied soldier
 -- (trench.lua:560, 603) with no owner check.
-local HUD_HOST_ONLY = { mnb2Retreat = true, trenchRetreatz = true, trenchUp = true, trenchRetreat = true }
+-- (mnb2Taunt calls the next wave for everyone: the host's call too, owner 2026-11-12)
+local HUD_HOST_ONLY = { mnb2Retreat = true, trenchRetreatz = true, trenchUp = true, trenchRetreat = true,
+    mnb2Taunt = true }
 squad.HUD_HOST_ONLY = HUD_HOST_ONLY
 
 function squad.isHudLabel(label)
@@ -671,6 +674,12 @@ local function runSwap(o)
     log("seat %d swapped faces %d and %d", o.seat, i, j)
 end
 
+-- one friend's order, run with their wallet (an error is printed, the rest of the queue goes on)
+local function runAs(seat, fn, o)
+    local ok, err = wallet.with(seat, fn, o)
+    if not ok then print("[mnb_coop] friend's order: " .. tostring(err)) end
+end
+
 -- Host, at the start of its frame (before the game's update).
 function squad.hostRunOrders()
     if type(player) ~= "table" or player.gameState ~= 0 then
@@ -681,18 +690,21 @@ function squad.hostRunOrders()
     queue = {}
     if not gameRelease or type(player) ~= "table" or player.gameState ~= 0 or pause ~= 0 then return end
     for _, o in ipairs(list) do
+        -- Anything that can spend TP (a bought unit, a radio strike, a gun, a skill, a fired
+        -- prompt) runs with that friend's wallet in player.tp (coop_wallet.lua); the host's
+        -- comes back afterwards, even if the game's code fails.
         if o.kind == "promo" then
             runPromo(o)
         elseif o.kind == "skill" then
-            runSkill(o)
+            runAs(o.seat, runSkill, o)
         elseif o.kind == "hud" then
-            runHud(o)
+            runAs(o.seat, runHud, o)
         elseif o.kind == "swap" then
             runSwap(o)
         elseif o.kind then
             runKey(o)
         else
-            runMove(o)
+            runAs(o.seat, runMove, o)
         end
     end
 end
@@ -830,6 +842,12 @@ function squad.clientMousereleased(x, y, button)
         press = nil
         -- (inline box test: inBox is defined further down this file)
         if x > 32 and x < 92 and y > 686 and y < 716 and mnbCoop and mnbCoop.battle and mnbCoop.battle.leaveReport then
+            -- the game's menu click (weaponInspect1..5, like its own buttons), played on this
+            -- window only: the view ends right after, so play it before
+            pcall(function()
+                local sfx = _G["weaponInspect" .. randNbr(5)] or rawget(_G, "clickSound")
+                if sfx then sfx:clone():play() end
+            end)
             mnbCoop.battle.leaveReport()
         end
         return

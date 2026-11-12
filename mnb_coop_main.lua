@@ -21,10 +21,21 @@ local campaign = require("includes/mods/mnb_coop/coop_campaign")
 local battle = require("includes/mods/mnb_coop/coop_battle")
 local squad = require("includes/mods/mnb_coop/coop_squad")
 local defense = require("includes/mods/mnb_coop/coop_defense")
+local wallet = require("includes/mods/mnb_coop/coop_wallet")
 local qmInput = require("includes/mods/mnb_coop/coop_qminput")
+local ribbons = require("includes/mods/mnb_coop/coop_ribbons")
 
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
-    squad = squad, defense = defense, version = net.VERSION }
+    squad = squad, defense = defense, ribbons = ribbons, wallet = wallet, version = net.VERSION }
+
+-- Co-op ribbons (coop_ribbons.lua, ids 201+): pictures, names and texts become game globals,
+-- and checkRibCondition hands our ids to the registry
+ribbons.install()
+
+-- Wave pace (qm.toml patch on the wave timer, urb_engine.lua:6084): the next wave comes at
+-- 60 + the living Germans / this. The defense twins every wave, so twice as many Germans
+-- stand around and waves (and their TP) would come slower than in the original; 1 elsewhere.
+coopWavePace = defense.wavePace
 
 -- Co-op Classic, defense layout (coop_defense.lua): the game's Classic set-up, wave
 -- maker and German direction helpers, each wrapped; they only differ in a defense battle.
@@ -56,8 +67,11 @@ local coopPreMNB2 = preMNB2Admin
 function preMNB2Admin(...)
     -- a new field, or a battle under way being loaded (mnb2.lua:7, 262)
     local fresh = not (type(player) == "table" and player.ui_gameStarted ~= 0 and player.ui_gameStarted ~= nil)
-    -- a new Classic battle (the deploy buttons, urb_engine.lua:8824-8914) waits for every friend's READY
-    if fresh and not net.readyToStart() then return end
+    -- a Classic battle, new (the deploy buttons, urb_engine.lua:8824-8914) or carried on
+    -- (urb_engine.lua:40033), waits for every friend's READY: the ready room opens and replays
+    -- this call on START (the buttons set mnb2SubGame first, so the replay starts the same mode)
+    local args = { n = select("#", ...), ... }
+    if not lobby.gate("CO-OP CLASSIC", function() preMNB2Admin(unpack(args, 1, args.n)) end) then return end
     local result = coopPreMNB2(...)
     local ok, err = pcall(defense.afterSetup, fresh)
     if not ok then print("[mnb_coop] defense setup: " .. tostring(err)) end
@@ -67,6 +81,7 @@ end
 
 -- a client that stops watching lands back in the lobby
 battle.onStopView = function(why)
+    wallet.clientReset()
     menuPage = lobby.page
     net.status = "Back in the lobby: " .. tostring(why)
 end
@@ -74,7 +89,7 @@ end
 -- ---------------------------------------------------------------- network hooks
 -- host: friends' orders (coop_squad) and rosters (coop_campaign)
 net.onClientMessage = function(seat, msg)
-    return squad.onClientMessage(seat, msg) or campaign.onClientMessage(seat, msg)
+    return squad.onClientMessage(seat, msg) or wallet.onClientMessage(seat, msg) or campaign.onClientMessage(seat, msg)
 end
 -- client: mission results go to the co-op save, the rest is the battle view
 local battleHostMessage = net.onHostMessage
@@ -82,11 +97,13 @@ net.onHostMessage = function(msg)
     if msg.t == "results" then return campaign.queueResults(msg) end
     if msg.t == "prompt" then return squad.onPrompt(msg) end -- my armed skill/item (aiming cursor)
     if msg.t == "ui" then return squad.onUi(msg) end         -- my HUD menu page after a button
+    if msg.t == "wallet" then return wallet.onHostMessage(msg) end -- my own TP (Classic wallets)
     return battleHostMessage(msg)
 end
 net.onWelcome = function() campaign.sendRoster() end -- my top soldiers to the host
 net.onSeatLeft = function(seat)
     squad.forgetSeat(seat)
+    wallet.forgetSeat(seat)
     campaign.onSeatLeft(seat)
 end
 local battleReset = net.onReset
@@ -195,6 +212,7 @@ local window = require("includes/mods/mnb_coop/coop_window")
 local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
+    pcall(lobby.updateRoom) -- friends follow the host into and out of the ready room
     pcall(lobby.updatePresence) -- where I am, for the others' lobby cards
     local okw, errw = pcall(window.update)
     if not okw then print("[mnb_coop] window: " .. tostring(errw)) end
@@ -203,6 +221,7 @@ function love.update(dt, ...)
         -- watching: the host runs the battle, this machine only animates the mirror
         local ok, err = pcall(battle.clientUpdate, dt)
         if not ok then print("[mnb_coop] watching: " .. tostring(err)) end
+        pcall(wallet.clientApply) -- my own TP in the mirror, not the host's
         if not battle.inDebrief() then
             pcall(squad.clientHud)   -- the game's HUD buttons, from this window's camera and menu page
         end
@@ -219,6 +238,8 @@ function love.update(dt, ...)
     end
     local okd, errd = pcall(defense.update) -- co-op defense: sides, and the radar
     if not okd then print("[mnb_coop] defense: " .. tostring(errd)) end
+    local okw2, errw2 = pcall(wallet.hostUpdate) -- (first frame of a battle: the wallets start here)
+    if not okw2 then print("[mnb_coop] wallets: " .. tostring(errw2)) end
     local result = coopUpdate(dt, ...)
     if campaign.active then
         local okl, errl = pcall(campaign.updateLeavers) -- a leaver's soldiers walk off; newcomers come in
@@ -240,8 +261,10 @@ function menu_goButton(...)
         mnbCoop.notice("Only the host starts missions")
         return
     end
-    -- the host waits for every friend's READY; a mission that starts uses it up
-    if not net.readyToStart() then return end
+    -- the host waits for every friend's READY (the ready room, replaying GO on START);
+    -- a mission that starts uses it up
+    local args = { n = select("#", ...), ... }
+    if not lobby.gate("CO-OP CAMPAIGN", function() menu_goButton(unpack(args, 1, args.n)) end) then return end
     if campaign.active then
         local ok, err = pcall(campaign.arrangeSquad)
         if not ok then print("[mnb_coop] squad: " .. tostring(err)) end
@@ -257,11 +280,7 @@ function menu_classicButton(...)
         mnbCoop.notice("Only the host starts battles")
         return
     end
-    -- Classic picks a mode or carries on a battle under way: both need every friend's READY
-    if not net.readyToStart() then
-        defense.armed = false
-        return
-    end
+    -- (no READY here: picking a mode is free; the start itself waits in the ready room)
     -- the co-op Classic tile arms this; the game's own Classic button doesn't
     defense.wanted, defense.armed = defense.armed, false
     return coopClassic(...)
@@ -318,16 +337,29 @@ function coopSizeLimit()
     return coopSquadMax and coopSquadMax() or 6
 end
 
--- TP income in co-op Classic (solo defense too): double (owner, 2026-11-11). The pool and its
--- cap (20 + ribbons, giveTp at mnb2.lua:894) stay shared, so it fills faster but doesn't
--- grow. giveTp is the game's one income path (kills, waves, loot, special waves); only
--- the sitrep bonus (ai.lua:6157) adds TP without it.
+-- TP income in co-op Classic. With friends connected, every player has their own wallet and
+-- giveTp's full amount goes into each one (coop_wallet.lua), not doubled. Alone (a solo
+-- defense) it is the old rule: one pool, double (owner, 2026-11-11). The cap (20 + ribbons,
+-- giveTp at mnb2.lua:894) is not raised. giveTp is the game's one income path (waves, taunts,
+-- loot, special waves); the sitrep bonus (ai.lua:6157), directive TP Surge and withdrawal
+-- refunds add to player.tp directly: whichever wallet sits in it then (see coop_wallet.lua).
 local coopGiveTp = giveTp
 function giveTp(nbr, ...)
-    if type(nbr) == "number" and coopClassicRules() then
-        nbr = nbr * 2
+    if type(nbr) == "number" then
+        if wallet.active() then
+            local before = type(player) == "table" and player.tp or nil
+            local r = { wallet.giveTp(coopGiveTp, nbr, ...) }
+            pcall(ribbons.afterGiveTp, before, nbr) -- the wallet in player.tp gets the ribbon's +2 too
+            return unpack(r)
+        elseif coopClassicRules() then
+            nbr = nbr * 2
+        end
     end
-    return coopGiveTp(nbr, ...)
+    local before = type(player) == "table" and player.tp or nil
+    local result = coopGiveTp(nbr, ...)
+    -- Two-Front War ribbon: +2 to the cap, put back after the game's own clamp
+    pcall(ribbons.afterGiveTp, before, nbr)
+    return result
 end
 
 -- A face click on the host doesn't open a friend's soldier's promotion panel: they choose.
@@ -359,6 +391,8 @@ local VIEW_KEYS = { f9 = true, tab = true, f3 = true, f4 = true }
 local function onKeypressed(key, ...)
     if lobby.wantsKeyboard() then return lobby.keypressed(key) end
     if hud.keypressed(key) then return end
+    -- G: give TP to the next player (Classic wallets, coop_wallet.lua)
+    if key == wallet.GIVE_KEY and wallet.keypressed(key) then return end
     if battle.viewing then
         -- friend in the host's battle: own selection keys, own view keys, Esc twice to leave
         local ok, used = pcall(squad.clientKeypressed, key)

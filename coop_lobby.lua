@@ -4,10 +4,11 @@
 -- like the game's own main menu so it feels native:
 --   top left        the party: four player cards (avatar, name, showcase, ready)
 --   header line     lobby status, where the main menu shows the campaign date
---   column 1        two stacked tiles (like CAREER / SQUAD): HOST and JOIN,
---                   which become READY and LEAVE once you're in a lobby
---   column 2        the CONNECTION tile (like COMMUNITY): address box + red links,
---                   next to HOST / JOIN (and away from the screen edge, so tooltips fit)
+--   right of cards  HOST and JOIN, which become READY once you're in a lobby
+--   column 1        CAREER and SQUAD on the co-op profile, where the main menu and the
+--                   co-op page have them (owner 2026-11-12: same place on every screen)
+--   column 2        the CONNECTION tile (like COMMUNITY): address box + red links
+--                   (CLOSE / LEAVE LOBBY is the last one)
 --   columns 3-5     CO-OP CAMPAIGN, CO-OP CLASSIC, CO-OP OPTIONS picture tiles
 --   bottom bar      Back
 -- Buttons are the game's own Button objects (hit zones + tooltips); drawing is ours.
@@ -32,7 +33,15 @@ local TILE = { x = 275, y = 185, w = 280, h = 465 }
 local FRAME = { x = 300, y = 210, w = 230, h = 150 }
 local FIELD = { x = 310, y = 248, w = 210, h = 30 }
 -- red links in the connection tile, like DISCORD / WIKI / NEWS / VIDEOS
-local LINK_Y = { 435, 485, 535, 585 }
+local LINK_Y = { 425, 470, 515, 560, 605 }
+-- the main menu's CAREER / SQUAD spot, used on the lobby and on the co-op page alike
+local CAREER = { 50, 185, 200, 220 }
+local SQUAD = { 50, 430, 200, 220 }
+-- the ready room: the players panel and the big READY / START tile
+local ROOM_LIST = { 50, 185, 730, 465 }
+local ROOM_BIG = { 805, 185, 425, 465 }
+local CAREER_TIP = "Your co-op career: ranks, ribbons and records,\nco-op campaign and co-op Classic together"
+local SQUAD_TIP = "Your six soldiers. Right-drag a card onto another to sort:\nthe top row goes on the next mission, the rest stay home."
 
 lobby.page = nil    -- menuPage number of the lobby
 lobby.bottomX = nil -- where "Multiplayer" sits on the main menu bar
@@ -159,27 +168,90 @@ function lobby.getHubPage()
     return lobby.hubPage
 end
 
--- ---------------------------------------------------------------- state-dependent pieces
--- Column 1: { top tile, bottom tile }, each { label, title, tooltip, enabled }
-local function sideTiles()
-    if net.role == "offline" then
-        return { "coopHost", "HOST", "Open a lobby on UDP port " .. port() .. ". Up to 4 players.", true },
-            { "coopJoin", "JOIN", "Join the host whose address is in the CONNECTION box", true }
-    elseif net.role == "connecting" then
-        return { "coopNothing", "HOST", "", false },
-            { "coopLeave", "CANCEL", "Stop connecting", true }
+-- ---------------------------------------------------------------- the ready room
+-- (owner, 2026-11-12) READY is asked when it means something: the host picks a mode (a Classic
+-- mode, or GO on a campaign mission), and if a friend isn't ready yet the start waits in the
+-- ready room instead. Everyone is pulled onto that page (net.stage rides on the lobby update),
+-- friends press READY, the host presses START, and the start the host clicked is replayed.
+lobby.roomPage = nil
+function lobby.getRoomPage()
+    if lobby.roomPage then return lobby.roomPage end
+    local menu = modMenu()
+    if menu and menu.allocatePage then
+        lobby.roomPage = menu.allocatePage("mnb_coop", "room", nil, nil)
+    else
+        lobby.roomPage = 142
     end
-    local ready = net.myReady()
-    local readyTile = { "coopReady", ready and "UNREADY" or "READY",
-        ready and "Take back your ready" or "Tell the others you are ready", true }
-    if net.role == "host" then
-        readyTile[3] = readyTile[3] .. "\nBattles start once every friend has pressed READY"
-        return readyTile, { "coopLeave", "CLOSE", "Close the lobby; everyone is disconnected", true }
-    end
-    return readyTile, { "coopLeave", "LEAVE", "Leave this lobby", true }
+    return lobby.roomPage
 end
 
--- Column 5 links: { label, text, tooltip }
+lobby.room = nil -- host: { title, back = page to return to, start = the start to replay }
+
+-- Host about to start something called `title`: true if it may go now (offline, alone, or
+-- every friend ready). Otherwise the ready room opens with `retry`, and it returns false.
+function lobby.gate(title, retry)
+    if net.role ~= "host" or net.allReady() then return true end
+    lobby.room = { title = title, back = menuPage, start = retry }
+    net.setStage(title)
+    menuPage = lobby.getRoomPage()
+    mouseOverText = ""
+    return false
+end
+
+local function closeRoom(page)
+    lobby.room = nil
+    net.setStage(nil)
+    if page then menuPage = page end
+    mouseOverText = ""
+end
+
+-- Every frame: friends follow the host's ready room in and out; a host who lost the lobby leaves it.
+function lobby.updateRoom()
+    local room = lobby.getRoomPage()
+    local battle = mnbCoop and mnbCoop.battle
+    if battle and battle.viewing then return end -- the battle has begun (or a report is still open)
+    if lobby.room then
+        if net.role ~= "host" then closeRoom(lobby.room.back) end
+        return
+    end
+    if net.role == "client" and net.stage then
+        if menuPage ~= room and not (type(player) == "table" and player.gameState == 0) then
+            lobby.fieldFocus = false
+            menuPage = room
+            mouseOverText = ""
+        end
+    elseif menuPage == room then
+        -- the host started or cancelled (or we left): back to the lobby
+        menuPage = lobby.getPage()
+        mouseOverText = ""
+    end
+end
+
+function coopRoomReadyButton()
+    click()
+    net.setReady(not net.myReady())
+end
+
+function coopRoomStartButton()
+    local room = lobby.room
+    if not room then return end
+    if not net.readyToStart() then return end -- it names who's missing
+    click()
+    closeRoom(room.back)
+    local ok, err = pcall(room.start)
+    if not ok then print("[mnb_coop] start from the ready room: " .. tostring(err)) end
+end
+
+function coopRoomCancelButton()
+    click()
+    local room = lobby.room
+    closeRoom(room and room.back or lobby.getPage())
+    net.resetReady()
+end
+
+-- ---------------------------------------------------------------- state-dependent pieces
+-- Connection tile links: { label, text, tooltip }. Up to five; HOST / JOIN / CLOSE / LEAVE live here too.
+local BLANK = { "coopNothing", "", "" }
 local function links()
     if net.role == "host" then
         return {
@@ -191,16 +263,22 @@ local function links()
             or { "coopNothing", "", "" },
             { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
             ",\npaste its address above, then COPY ADDRESS and send it to your friends." },
+            { "coopLeave", "CLOSE LOBBY", "Close the lobby; everyone is disconnected" },
         }
-    elseif net.role == "offline" then
-        return {
-            { "coopPaste", "PASTE ADDRESS", "Paste the host's address from the clipboard (Ctrl+V)" },
-            { "coopClear", "CLEAR",         "Empty the address box" },
-            { "coopHelp", "HOW TO JOIN?", "Same house: the host's local address (like 192.168.0.10:47913).\n" ..
-            "Online: the host's playit.gg address (like name.playit.gg:12345)." },
-        }
+    elseif net.role == "client" then
+        -- the info text fills the top of the tile; LEAVE sits in the last slot
+        return { BLANK, BLANK, BLANK, BLANK, { "coopLeave", "LEAVE LOBBY", "Leave this lobby" } }
+    elseif net.role == "connecting" then
+        return { BLANK, BLANK, BLANK, BLANK, { "coopLeave", "CANCEL", "Stop connecting" } }
     end
-    return {}
+    return {
+        { "coopJoin", "JOIN", "Join the host whose address is in the box above (Enter)" },
+        { "coopHost", "HOST A LOBBY", "Open a lobby on UDP port " .. port() .. ". Up to " .. net.MAX_SEATS .. " players." },
+        { "coopPaste", "PASTE ADDRESS", "Paste the host's address from the clipboard (Ctrl+V)" },
+        { "coopClear", "CLEAR",         "Empty the address box" },
+        { "coopHelp", "HOW TO JOIN?", "Same house: the host's local address (like 192.168.0.10:47913).\n" ..
+        "Online: the host's playit.gg address (like name.playit.gg:12345)." },
+    }
 end
 
 local seatCard, isMe -- defined with the drawing code below
@@ -247,8 +325,8 @@ function lobby.registerButtons()
     end
     if campaign.active and menuPage == lobby.getHubPage() then
         local canStart = net.role == "host" or net.role == "offline"
-        addButton(50, 185, 200, 220, "coopHubCareer", "Your co-op career: ranks, ribbons and records")
-        addButton(50, 430, 200, 220, "coopHubSquad", "Your six soldiers. Right-drag a card onto another to sort:\nthe top row goes on the next mission, the rest stay home.")
+        addButton(CAREER[1], CAREER[2], CAREER[3], CAREER[4], "coopHubCareer", CAREER_TIP)
+        addButton(SQUAD[1], SQUAD[2], SQUAD[3], SQUAD[4], "coopHubSquad", SQUAD_TIP)
         addButton(275, 185, 200, 465, "coopHubCampaign", canStart
             and "Brief and start the next mission, for everyone in the lobby"
             or "The host starts the missions. You'll be pulled in when the battle begins.")
@@ -261,20 +339,35 @@ function lobby.registerButtons()
             or "Full reset: like New war, but your six soldiers are replaced by new rookies.\nThe old war is kept as a backup.")
         return
     end
+    if menuPage == lobby.getRoomPage() then
+        for i = 1, net.MAX_SEATS do
+            addButton(BOX_X + (i - 1) * (BOX + BOX_GAP), BOX_Y, BOX, BOX + 20, "coopSeat" .. i, seatTip(i))
+        end
+        if net.role == "host" then
+            addButton(ROOM_BIG[1], ROOM_BIG[2], ROOM_BIG[3], ROOM_BIG[4], "coopRoomStart", net.allReady()
+                and "Everyone is ready: start for everyone"
+                or "Waits for every friend's READY")
+            addButton(32, 686, 80, 30, "coopRoomCancel", "Back to choosing; nobody starts")
+        else
+            addButton(ROOM_BIG[1], ROOM_BIG[2], ROOM_BIG[3], ROOM_BIG[4], "coopRoomReady",
+                net.myReady() and "Take back your ready" or "Tell the host you are ready")
+            addButton(32, 686, 160, 30, "coopLeave", "Leave this lobby")
+        end
+        return
+    end
     if menuPage ~= lobby.getPage() then return end
     for i = 1, net.MAX_SEATS do
         addButton(BOX_X + (i - 1) * (BOX + BOX_GAP), BOX_Y, BOX, BOX + 20, "coopSeat" .. i, seatTip(i))
     end
-    local top, bottom = sideTiles()
-    addButton(50, 185, 200, 220, top[1], top[3])
-    addButton(50, 430, 200, 220, bottom[1], bottom[3])
+    addButton(CAREER[1], CAREER[2], CAREER[3], CAREER[4], "coopCareer", CAREER_TIP)
+    addButton(SQUAD[1], SQUAD[2], SQUAD[3], SQUAD[4], "coopSquad", SQUAD_TIP)
     local canStart = net.role == "host" or net.role == "offline"
-    addButton(580, 185, 200, 465, "coopCampaign", (campaign.hasSave() and "Your co-op save" or "Start your co-op save") ..
-        ": the game's menu on its own save. Career, and your Squad: sort who you bring (top row goes first)." ..
+    addButton(580, 185, 200, 465, "coopCampaign", (campaign.hasSave() and "Your co-op war" or "Start your co-op war") ..
+        ": the day, the map and the next mission." ..
         (canStart and "\nCampaign starts the next mission for everyone." or "\nThe host starts the missions.") ..
         "\nYour own campaign is not touched.")
     addButton(805, 185, 200, 465, "coopClassic", canStart
-        and "Co-op Classic, DEFENSE: your squads start in the middle around a radar,\nthe Germans come from both sides. Ten of them at the radar and it's over.\nPick a Classic mode next (trench and para modes play as usual).\nThe game's Classic save is used (your Classic rank)."
+        and "Co-op Classic, DEFENSE: your squads start in the middle around a radar,\nthe Germans come from both sides. Ten of them at the radar and it's over.\nPick a Classic mode next (trench and para modes play as usual).\nRank and ribbons go to your co-op career; your real Classic is not touched."
         or "The host starts the battle. You'll be pulled in when it begins.")
     addButton(1030, 185, 200, 465, "coopOptions", "Co-op settings (port, debug log)")
     if net.role == "host" or net.role == "offline" then
@@ -304,6 +397,7 @@ function coopBackButton()
     click()
     lobby.fieldFocus = false
     if campaign.active then campaign.exit() end -- leaving the lobby = back to your own save
+    campaign.classic.exit() -- same for the co-op Classic profile
     menuPage = 1
     mouseOverText = ""
 end
@@ -402,6 +496,13 @@ local function seatClick(i)
 end
 for i = 1, 4 do _G["coopSeat" .. i .. "Button"] = function() seatClick(i) end end
 
+-- Where the game's "back to the main menu" goes while co-op is open (coop_campaign.lua):
+-- the page Career or Squad was opened from, the lobby or the co-op page.
+lobby.returnPage = nil
+function lobby.backPage()
+    return lobby.returnPage or lobby.getHubPage()
+end
+
 function coopCampaignButton()
     -- anyone opens their own co-op save; only the host (or offline) starts missions there
     click()
@@ -412,21 +513,28 @@ function coopCampaignButton()
         return
     end
     mouseOverText = ""
+    lobby.returnPage = lobby.getHubPage()
     menuPage = lobby.getHubPage() -- the co-op page
 end
 
--- co-op page tiles: the game's own screens, on the co-op save
-function coopHubCareerButton()
+-- Career and Squad: the game's own screens on the co-op profile, from the lobby or the co-op page
+local function openOnCoop(screen, from)
     click()
+    lobby.fieldFocus = false
+    local ok, why = campaign.enter() -- (already open from the co-op page)
+    if not ok then
+        net.status = "Co-op career: " .. tostring(why)
+        return
+    end
     mouseOverText = ""
-    menu_careerButton()
+    lobby.returnPage = from
+    screen()
 end
 
-function coopHubSquadButton()
-    click()
-    mouseOverText = ""
-    menu_squadButton()
-end
+function coopCareerButton() openOnCoop(menu_careerButton, lobby.getPage()) end
+function coopSquadButton() openOnCoop(menu_squadButton, lobby.getPage()) end
+function coopHubCareerButton() openOnCoop(menu_careerButton, lobby.getHubPage()) end
+function coopHubSquadButton() openOnCoop(menu_squadButton, lobby.getHubPage()) end
 
 function coopHubCampaignButton()
     if not (net.role == "host" or net.role == "offline") then
@@ -497,8 +605,14 @@ function coopClassicButton()
         if mnbCoop and mnbCoop.notice then mnbCoop.notice("Only the host starts battles") end
         return
     end
-    if not net.readyToStart() then return end -- every friend's READY first (it names who's missing)
+    -- (READY is asked once the host picks a mode: the ready room, lobby.gate)
     if campaign.active then pcall(campaign.exit) end -- Classic has its own save
+    -- co-op Classic runs on its own Classic profile (coop/classic), never the real one
+    local ok, why = campaign.classic.enter()
+    if not ok then
+        if mnbCoop and mnbCoop.notice then mnbCoop.notice("Co-op Classic: " .. tostring(why)) end
+        return
+    end
     click()
     mouseOverText = ""
     lobby.fieldFocus = false
@@ -580,6 +694,7 @@ function lobby.whereAmI()
         return (type(player) == "table" and player.gameState ~= 0) and "report" or "battle"
     end
     if menuPage == lobby.page then return "lobby" end
+    if lobby.roomPage and menuPage == lobby.roomPage then return "room" end
     if campaign.active then return "campaign" end
     if type(player) == "table" and player.gameType == 1 then return "classic" end
     return "menu"
@@ -703,6 +818,15 @@ local function drawTile(x, y, w, h, frame, icon, title, titleY, enabled, sub)
     if sub then outlined(sub, x, titleY + 32, w, "center", nonoFont, DIM) end
 end
 
+-- CAREER and SQUAD, same tiles in the same place on the lobby and the co-op page
+-- (and where the game's main menu has them)
+local function drawCareerSquad()
+    drawTile(CAREER[1], CAREER[2], CAREER[3], CAREER[4], { 75, 210, 150, 115 }, profileIcon1, "CAREER", 355, true)
+    -- "sort who goes" between the picture and the title
+    drawTile(SQUAD[1], SQUAD[2], SQUAD[3], SQUAD[4], { 75, 455, 150, 115 }, squadIcon1, "SQUAD", 602, true)
+    outlined("sort who goes", SQUAD[1], 578, SQUAD[3], "center", nonoFont, DIM)
+end
+
 local function drawConnection()
     local hosting = net.role == "host"
     love.graphics.setColor(rgba(PANEL))
@@ -757,10 +881,10 @@ local function drawConnection()
     local title = hosting and "HOSTING" or (net.role == "client" and "IN LOBBY" or "CONNECTION")
     outlined(title, TILE.x, 385, TILE.w, "center", bigFont, WHITE)
     local list = links()
-    if #list == 0 then
+    if net.role == "client" or net.role == "connecting" then
         local info = net.role == "client" and ("Players " .. net.playerCount() .. "/" .. net.MAX_SEATS ..
-            "\n\nClick your card to change\nwhat it shows.\n\nWaiting for the host.") or "Connecting..."
-        outlined(info, TILE.x + 20, 435, TILE.w - 40, "center", nonoFont, WHITE)
+            "\n\nClick your card to change\nwhat it shows.\n\nWhen the host picks a mode,\nyou get a READY button.") or "Connecting..."
+        outlined(info, TILE.x + 20, 430, TILE.w - 40, "center", nonoFont, WHITE)
     end
     for i, l in ipairs(list) do
         local hot = hovered(TILE.x + 30, LINK_Y[i], TILE.w - 60, 32)
@@ -789,8 +913,7 @@ local function drawHub()
     love.graphics.print("CO-OP CAMPAIGN, day " .. tostring(p.dayz or 1), 30, 130)
 
     local canStart = net.role == "host" or net.role == "offline"
-    drawTile(50, 185, 200, 220, { 75, 210, 150, 115 }, profileIcon1, "CAREER", 355, true)
-    drawTile(50, 430, 200, 220, { 75, 455, 150, 115 }, squadIcon1, "SQUAD", 600, true, "sort who goes")
+    drawCareerSquad()
     drawTile(275, 185, 200, 465, { 300, 210, 150, 360 }, campaingIcon1, "CAMPAIGN", 590, canStart,
         canStart and "next mission" or "host starts it")
 
@@ -837,7 +960,86 @@ local function drawHub()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+-- The ready room: who is ready, and the one big button (READY for a friend, START for the host).
+local function drawRoom()
+    for i = 1, net.MAX_SEATS do drawSeat(i) end
+    local hosting = net.role == "host"
+    local title = (hosting and lobby.room and lobby.room.title) or net.stage or "CO-OP"
+    love.graphics.setFont(bigFont)
+    love.graphics.setColor(rgba({ 120, 120, 120 }))
+    love.graphics.print(title .. ", get ready", 30, 130)
+
+    -- players panel
+    local x, y, w, h = ROOM_LIST[1], ROOM_LIST[2], ROOM_LIST[3], ROOM_LIST[4]
+    love.graphics.setColor(rgba(PANEL))
+    love.graphics.rectangle("fill", x, y, w, h)
+    love.graphics.setColor(rgba({ 20, 20, 20 }, 235))
+    love.graphics.rectangle("fill", x + 25, y + 25, w - 50, h - 50)
+    love.graphics.setColor(rgba(BLACK))
+    love.graphics.rectangle("line", x + 25, y + 25, w - 50, h - 50)
+    outlined(hosting and "WAITING FOR YOUR FRIENDS" or "THE HOST PICKED " .. title, x + 45, y + 40, w - 90, "left", bigFont, WHITE)
+    outlined(hosting and "START unlocks once every friend has pressed READY."
+        or "Press READY when you're set. The host starts the battle.", x + 45, y + 74, w - 90, "left", nonoFont, LIGHT)
+    local row = 0
+    for i = 1, net.MAX_SEATS do
+        local s = net.seats[i]
+        if s then
+            local ry = y + 115 + row * 80
+            row = row + 1
+            love.graphics.setColor(rgba({ 45, 45, 45 }))
+            love.graphics.rectangle("fill", x + 45, ry, w - 90, 64)
+            love.graphics.setColor(rgba(net.SEAT_COLORS[i]))
+            love.graphics.rectangle("fill", x + 45, ry, 6, 64)
+            outlined(tostring(s.name or ("Player " .. i)) .. (isMe(i) and "  (you)" or ""), x + 65, ry + 8, 400, "left", cardFont or nonoFont, WHITE)
+            local state, color
+            if i == 1 then
+                state, color = "HOST, starts it", LIGHT
+            elseif s.ready then
+                state, color = "READY", { 115, 205, 90 }
+            else
+                state, color = "not ready yet", DIM
+            end
+            outlined(state, x + 65, ry + 36, 400, "left", nonoFont, color)
+        end
+    end
+
+    -- the big button
+    local bx, by, bw, bh = ROOM_BIG[1], ROOM_BIG[2], ROOM_BIG[3], ROOM_BIG[4]
+    local label, sub, lit, enabled
+    if hosting then
+        local missing = net.notReady()
+        enabled = #missing == 0
+        label, lit = "START", enabled
+        sub = enabled and "everyone is ready" or ("waiting for " .. table.concat(missing, ", "))
+    else
+        lit, enabled = net.myReady(), true
+        label = "READY"
+        sub = lit and "you're ready (click to take it back)" or "click when you're set"
+    end
+    local hot = enabled and hovered(bx, by, bw, bh)
+    love.graphics.setColor(rgba(PANEL))
+    love.graphics.rectangle("fill", bx, by, bw, bh)
+    love.graphics.setColor(rgba(lit and RED or { 20, 20, 20 }, lit and 235 or 220))
+    love.graphics.rectangle("fill", bx + 25, by + 25, bw - 50, bh - 140)
+    love.graphics.setColor(rgba(BLACK))
+    love.graphics.rectangle("line", bx + 25, by + 25, bw - 50, bh - 140)
+    outlined(label, bx, by + (bh - 140) / 2 + 10, bw, "center", bigFont, hot and (lit and WHITE or RED) or (enabled and WHITE or DIM))
+    outlined(sub, bx + 25, by + bh - 95, bw - 50, "center", nonoFont, lit and WHITE or LIGHT)
+
+    if hosting then
+        outlined("Cancel", 50, 685, 100, "left", bigFont, hovered(32, 686, 80, 30) and RED or LIGHT)
+    else
+        outlined("Leave lobby", 50, 685, 160, "left", bigFont, hovered(32, 686, 160, 30) and RED or LIGHT)
+    end
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 function lobby.draw()
+    if lobby.roomPage and menuPage == lobby.roomPage then
+        local ok, err = pcall(drawRoom)
+        if not ok then print("[mnb_coop] ready room: " .. tostring(err)) end
+        return
+    end
     if campaign.active and menuPage == lobby.hubPage then
         local ok, err = pcall(drawHub)
         if not ok then print("[mnb_coop] co-op page: " .. tostring(err)) end
@@ -849,7 +1051,8 @@ function lobby.draw()
         local players = #campaign.owners()
         local title = "CO-OP CAMPAIGN"
         local rest = "  |  " .. n .. " soldiers" .. (players > 1 and (", " .. math.floor(n / players) .. " each") or "") ..
-            "  |  own save, your campaign is untouched  |  Back: co-op page"
+            "  |  own save, your campaign is untouched  |  Back: " ..
+            (lobby.backPage() == lobby.page and "lobby" or "co-op page")
         if mnbCoop and mnbCoop.noticeText and love.timer.getTime() - (mnbCoop.noticeAt or 0) < 3 then
             rest = "  |  " .. mnbCoop.noticeText
         end
@@ -875,11 +1078,9 @@ function lobby.draw()
     love.graphics.setColor(rgba({ 120, 120, 120 }))
     love.graphics.print(headerText(), 30, 130)
 
-    local top, bottom = sideTiles()
-    drawTile(50, 185, 200, 220, { 75, 210, 150, 115 }, squadIcon1, top[2], 355, top[4])
-    drawTile(50, 430, 200, 220, { 75, 455, 150, 115 }, profileIcon1, bottom[2], 600, bottom[4])
+    drawCareerSquad()
     drawTile(580, 185, 200, 465, { 605, 210, 150, 360 }, campaingIcon1, "CO-OP CAMPAIGN", 590, true,
-        campaign.hasSave() and "your squad" or "new save")
+        campaign.hasSave() and "your war" or "new war")
     -- a friend doesn't do anything in Classic on their own (the host starts it): shown closed
     local canClassic = net.role == "host" or net.role == "offline"
     drawTile(805, 185, 200, 465, { 830, 210, 150, 360 }, classicIcon1, "CO-OP CLASSIC", 590, canClassic,
