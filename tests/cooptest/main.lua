@@ -53,6 +53,24 @@ a, p, c = net.parseAddress("192.168.0.10"); check(a == "192.168.0.10" and p == n
 a, p, c = net.parseAddress("192.168.0.151:47913DJXVV"); check(a == "192.168.0.151" and p == 47913 and c == "DJXVV", "parse code without #")
 check(net.parseAddress("") == nil and net.parseAddress("a:b:c") == nil and net.parseAddress("#ABC") == nil, "parse rejects")
 
+-- big messages go out in pieces under net.CHUNK bytes, and come back whole
+local wire = {}
+local fakePeer = { send = function(_, data, ch) wire[#wire + 1] = { data = data, ch = ch } end }
+local big = codec.encode({ t = "avatar", data = ("PNG\0\1\2"):rep(9000) }) -- ~54 KB, like a Steam avatar
+net._put(fakePeer, big, 0)
+local biggest, whole = 0, nil
+for i, w in ipairs(wire) do
+  biggest = math.max(biggest, #w.data)
+  local got = net._reassemble(fakePeer, 0, w.data, 200 * 1024)
+  if got then whole = got check(i == #wire, "whole only after the last piece") end
+end
+check(#wire > 50 and biggest <= net.CHUNK, "split into " .. #wire .. " pieces, largest " .. biggest .. " bytes")
+check(whole == big and codec.decode(whole).t == "avatar", "reassembled exactly")
+wire = {}
+net._put(fakePeer, codec.encode({ t = "lobby" }), 0)
+check(#wire == 1 and wire[1].data:byte(1) ~= 0 and net._reassemble(fakePeer, 0, wire[1].data, 1000) == wire[1].data, "small messages go as they are")
+check(select(2, net._reassemble({}, 0, "\0" .. 999999 .. ":x", 200 * 1024)) == "bad", "a piece claiming too big a total is refused")
+
 local function freshNet()
   package.loaded["includes/mods/mnb_coop/coop_net"] = nil
   return require("includes/mods/mnb_coop/coop_net")
@@ -87,6 +105,13 @@ check(c1.playerCount() == 3 and c2.playerCount() == 3, "clients see 3 players")
 c1.setReady(true) hostNet.setReady(true) c2.setReady(true)
 waitSec(1.2)
 check(hostNet.allReady() and c2.seats[2] and c2.seats[2].ready, "ready synced")
+-- a big avatar over real enet (sent in pieces): it arrives, nobody is dropped for "flooding",
+-- and the lobby keeps flowing after it (owner, 2026-11-11: a friend stuck at 0/3)
+local png = "\137PNG\r\n\26\n" .. ("x"):rep(60 * 1024)
+c1.sendToHost({ t = "avatar", data = png })
+waitSec(1.5)
+check(hostNet.playerCount() == 3 and c1.role == "client", "big avatar: nobody dropped")
+check(c2.playerCount() == 3 and c2.seats[2] and c2.seats[2].ready, "lobby still arrives after it")
 
 -- version mismatch
 local c3 = freshNet() c3.VERSION = "9.9.9"

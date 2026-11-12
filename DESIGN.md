@@ -77,6 +77,13 @@ Game code facts are cited as `file:line` so they can be re-checked after game up
   prompt to claim the agent, then create one **UDP** tunnel to the co-op port on localhost. Friends type the playit
   address (`name.playit.gg:port`) into JOIN; the lobby has a field where the host pastes it to show/copy it.
 - Not needed for LAN tests. Set it up with the owner when step 2 is tested with a friend outside the house.
+- (v0.9.4) First real test over playit (2026-11-11): the friend got "Connected" (the welcome arrived) but sat at 0/3
+  players forever, so no lobby update ever arrived. Likely cause: enet sends anything over its 1400-byte MTU as fragments;
+  on a tunnel/PPPoE/VPN route those big datagrams can be dropped, so the first big message (the host's avatar, right
+  after the welcome) never completes and, channel 0 being reliable and ordered, blocks everything behind it. Fix: no
+  packet on the wire is over `net.CHUNK` (1000) bytes; bigger messages go as "\0<total>:<piece>", "\0<piece>"...
+  and are reassembled before decoding (coop_net.lua `put` / `reassemble`). The guard counts pieces as bytes and the
+  message once when whole (a 60 KB avatar is 60 pieces; the old per-message limit was 60/s).
 
 ## Lobby (main menu)
 - Patches add a **CO-OP** tile to the main menu (`buttonUpdateMenu` menuPage 1 block, urb_engine.lua:8127; drawn in the
