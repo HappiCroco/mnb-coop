@@ -194,6 +194,7 @@ local window = require("includes/mods/mnb_coop/coop_window")
 local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
+    pcall(lobby.updatePresence) -- where I am, for the others' lobby cards
     local okw, errw = pcall(window.update)
     if not okw then print("[mnb_coop] window: " .. tostring(errw)) end
     if battle.viewing then

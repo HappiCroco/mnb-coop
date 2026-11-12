@@ -212,6 +212,7 @@ local function seatTip(i)
     if show ~= "" then lines[#lines + 1] = show end
     if s.ping and not isMe(i) then lines[#lines + 1] = "Ping " .. math.floor(s.ping) .. " ms" end
     if net.role ~= "offline" then lines[#lines + 1] = s.ready and "Ready" or "Not ready" end
+    if net.role ~= "offline" and s.where and net.WHERE[s.where] then lines[#lines + 1] = net.WHERE[s.where][2] end
     if isMe(i) then
         lines[#lines + 1] = "Click to change what your card shows"
     elseif net.role == "host" then
@@ -552,6 +553,36 @@ function lobby.mousereleased(x, y)
     end
 end
 
+-- ---------------------------------------------------------------- where everyone is
+-- Each player's place goes on their card for the others (net.WHERE): a friend reading the
+-- battle report or sorting their squad isn't just "missing". Sent when it changes, and
+-- again every few seconds (a lost or early one fixes itself).
+function lobby.whereAmI()
+    local battle = mnbCoop and mnbCoop.battle
+    if battle and battle.viewing then return battle.inDebrief() and "report" or "battle" end
+    if battle and battle.hostActive then
+        return (type(player) == "table" and player.gameState ~= 0) and "report" or "battle"
+    end
+    if menuPage == lobby.page then return "lobby" end
+    if campaign.active then return "campaign" end
+    if type(player) == "table" and player.gameType == 1 then return "classic" end
+    return "menu"
+end
+
+lobby.whereSent, lobby.whereSentAt = nil, 0
+function lobby.updatePresence()
+    if net.role ~= "host" and net.role ~= "client" then
+        lobby.whereSent = nil
+        return
+    end
+    local w = lobby.whereAmI()
+    local now = love.timer.getTime()
+    if w ~= lobby.whereSent or now - lobby.whereSentAt > 4 then
+        lobby.whereSent, lobby.whereSentAt = w, now
+        net.setWhere(w)
+    end
+end
+
 -- ---------------------------------------------------------------- drawing
 -- The card shown in seat i: the lobby's, or our own preview while offline.
 function seatCard(i)
@@ -600,6 +631,13 @@ local function drawSeat(i)
             love.graphics.setColor(rgba(RED, 230))
             love.graphics.rectangle("fill", x + 4, y + 4, BOX - 8, 18)
             outlined("READY", x, y + 4, BOX, "center", nonoFont, WHITE)
+        end
+        -- where they are (lobby, campaign, battle report...), along the card's bottom
+        local where = net.role ~= "offline" and s.where and net.WHERE[s.where]
+        if where then
+            love.graphics.setColor(rgba(BLACK, 190))
+            love.graphics.rectangle("fill", x + 4, y + BOX - 24, BOX - 8, 18)
+            outlined(where[1], x, y + BOX - 24, BOX, "center", nonoFont, s.where == "lobby" and LIGHT or WHITE)
         end
         if lobby.kickArm == i and love.timer.getTime() - (lobby.kickArmAt or 0) < 3 then
             love.graphics.setColor(rgba(RED, 200))
@@ -819,7 +857,10 @@ function lobby.draw()
     drawTile(50, 430, 200, 220, { 75, 455, 150, 115 }, profileIcon1, bottom[2], 600, bottom[4])
     drawTile(580, 185, 200, 465, { 605, 210, 150, 360 }, campaingIcon1, "CO-OP CAMPAIGN", 590, true,
         campaign.hasSave() and "your squad" or "new save")
-    drawTile(805, 185, 200, 465, { 830, 210, 150, 360 }, classicIcon1, "CO-OP CLASSIC", 590, true, "defense")
+    -- a friend doesn't do anything in Classic on their own (the host starts it): shown closed
+    local canClassic = net.role == "host" or net.role == "offline"
+    drawTile(805, 185, 200, 465, { 830, 210, 150, 360 }, classicIcon1, "CO-OP CLASSIC", 590, canClassic,
+        canClassic and "defense" or "the host starts it")
     drawTile(1030, 185, 200, 465, { 1055, 210, 150, 360 }, optionsIcon1, "CO-OP OPTIONS", 600, true)
     drawConnection()
 

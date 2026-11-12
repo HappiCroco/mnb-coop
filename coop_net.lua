@@ -324,6 +324,7 @@ local function cleanCard(c)
     out.face = { eyes = tonumber(f.eyes) or 1, nose = tonumber(f.nose) or 1, mouth = tonumber(f.mouth) or 1, hair = tonumber(f.hair) or 1 }
     out.ready = c.ready == true
     out.ping = tonumber(c.ping)
+    out.where = net.WHERE[c.where] and c.where or nil
     return out
 end
 
@@ -333,7 +334,8 @@ local function lobbyView()
     for i = 1, net.MAX_SEATS do
         local s = net.seats[i]
         if s then
-            seats[i] = { name = s.name, steamId = s.steamId, show = s.show, face = s.face, ready = s.ready, ping = s.ping }
+            seats[i] = { name = s.name, steamId = s.steamId, show = s.show, face = s.face, ready = s.ready, ping = s.ping,
+                where = s.where }
         else
             seats[i] = false
         end
@@ -408,10 +410,16 @@ local function hostReceive(peer, msg)
     elseif msg.t == "ready" then
         net.seats[seat].ready = msg.on == true
         lastLobbySent = 0
+    elseif msg.t == "where" then
+        -- where this player is (lobby, campaign, battle report...), shown on their card
+        if net.WHERE[msg.w] and net.seats[seat].where ~= msg.w then
+            net.seats[seat].where = msg.w
+            lastLobbySent = 0
+        end
     elseif msg.t == "card" then
         local card = cleanCard(msg.card)
         if card then
-            card.ready, card.avatar = net.seats[seat].ready, net.seats[seat].avatar
+            card.ready, card.avatar, card.where = net.seats[seat].ready, net.seats[seat].avatar, net.seats[seat].where
             net.seats[seat] = card
             lastLobbySent = 0
         end
@@ -622,6 +630,32 @@ function net.setReady(on)
     end
 end
 
+-- Where a player is, shown on their lobby card (owner, 2026-11-12: "show the other players: he's
+-- in the battle report, he's in the main menu, he's in the campaign"). [code] = { card label, tooltip }
+net.WHERE = {
+    lobby = { "LOBBY", "In the lobby" },
+    campaign = { "CAMPAIGN", "In the co-op campaign menus" },
+    classic = { "CLASSIC", "In Classic" },
+    battle = { "IN BATTLE", "In the battle" },
+    report = { "REPORT", "Reading the battle report" },
+    menu = { "MENU", "In the game's menus" },
+}
+
+-- This machine's place: mine on my card (the host's at once; a friend's goes to the host).
+function net.setWhere(w)
+    if not net.WHERE[w] then return end
+    local mine = net.mySeat and net.seats[net.mySeat]
+    if net.role == "host" then
+        if mine and mine.where ~= w then
+            mine.where = w
+            lastLobbySent = 0
+        end
+    elseif net.role == "client" then
+        if mine then mine.where = w end
+        send(server, { t = "where", w = w })
+    end
+end
+
 -- Host: everyone back to "not ready" (a battle just started: the next one needs a new ready).
 function net.resetReady()
     if net.role ~= "host" then return end
@@ -650,7 +684,7 @@ end
 function net.refreshCard()
     local card = myCard()
     if net.role == "host" and net.seats[1] then
-        card.ready, card.avatar = net.seats[1].ready, net.seats[1].avatar
+        card.ready, card.avatar, card.where = net.seats[1].ready, net.seats[1].avatar, net.seats[1].where
         net.seats[1] = card
         lastLobbySent = 0
     elseif net.role == "client" then
