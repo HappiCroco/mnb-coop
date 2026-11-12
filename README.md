@@ -21,6 +21,10 @@ gives the co-op an options page.
 Main menu → **Multiplayer**. The host clicks HOST and shares the address (for online play behind a router, a
 [playit.gg](https://playit.gg) UDP tunnel works); friends paste it and join.
 
+## Licence
+MIT ([LICENSE](LICENSE)), for this mod's own code. Mud and Blood and its files belong to their owners; nothing here
+includes or grants rights to the game.
+
 ## For developers
 `main` holds only what players get. Work happens on the
 [`dev` branch](https://github.com/HappiCroco/mnb-coop/tree/dev), which also has the design notes (DESIGN.md), the
