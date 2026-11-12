@@ -472,6 +472,16 @@ local function clientReceive(msg)
             if card then card.avatar = avatarImages[i] end
             net.seats[i] = card
         end
+        -- my READY click is on its way to the host: show it until the host's lobby agrees
+        -- (or 3 s pass), so a lobby update sent before the click doesn't flip it back
+        local mine = net.mySeat and net.seats[net.mySeat]
+        if net.pendingReady ~= nil and mine then
+            if mine.ready == net.pendingReady or love.timer.getTime() - (net.pendingReadyAt or 0) > 3 then
+                net.pendingReady = nil
+            else
+                mine.ready = net.pendingReady
+            end
+        end
     elseif msg.t == "avatar" then
         local seat = tonumber(msg.seat)
         if seat and seat >= 1 and seat <= net.MAX_SEATS then
@@ -501,6 +511,7 @@ local function reset(status)
     statWindow = { at = love.timer.getTime(), up = 0, down = 0, msgsOut = 0, msgsIn = 0 }
     net.stats = { upRate = 0, downRate = 0, totalUp = 0, totalDown = 0, msgsOutRate = 0, msgsInRate = 0 }
     net.joinCode, net.blocked = nil, 0
+    net.pendingReady, net.pendingReadyAt = nil, nil
     net.role, net.mySeat, net.seats = "offline", nil, {}
     net.status = status or "Offline"
     if net.onReset then
@@ -598,12 +609,36 @@ function net.leave()
 end
 
 function net.setReady(on)
+    on = on == true
     if net.role == "host" then
         if net.seats[1] then net.seats[1].ready = on end
         lastLobbySent = 0
     elseif net.role == "client" then
         send(server, { t = "ready", on = on })
+        -- shown at once; the next click flips from this, not from the host's older view
+        net.pendingReady, net.pendingReadyAt = on, love.timer.getTime()
+        local mine = net.mySeat and net.seats[net.mySeat]
+        if mine then mine.ready = on end
     end
+end
+
+-- Host: everyone back to "not ready" (a battle just started: the next one needs a new ready).
+function net.resetReady()
+    if net.role ~= "host" then return end
+    for i = 1, net.MAX_SEATS do
+        if net.seats[i] then net.seats[i].ready = false end
+    end
+    lastLobbySent = 0
+end
+
+-- The friends (not the host: starting is the host's "ready") who haven't pressed READY.
+function net.notReady()
+    local names = {}
+    for i = 2, net.MAX_SEATS do
+        local s = net.seats[i]
+        if s and not s.ready then names[#names + 1] = s.name or ("Player " .. i) end
+    end
+    return names
 end
 
 function net.myReady()
@@ -629,11 +664,23 @@ function net.playerCount()
     return n
 end
 
+-- Every friend is ready (true with no friends: the host plays alone).
 function net.allReady()
-    for i = 1, net.MAX_SEATS do
-        if net.seats[i] and not net.seats[i].ready then return false end
+    return #net.notReady() == 0
+end
+
+-- Host about to start a battle: true if it may. Otherwise it names who isn't ready (a pop-up)
+-- and returns false. Always true offline, as a client (who can't start anyway) or alone.
+function net.readyToStart()
+    if net.role ~= "host" then return true end
+    local missing = net.notReady()
+    if #missing == 0 then return true end
+    local who = table.concat(missing, ", ")
+    if mnbCoop and mnbCoop.notice then
+        mnbCoop.notice("Waiting for " .. who .. " to press READY")
     end
-    return net.playerCount() > 1
+    net.status = "Waiting for " .. who .. " to press READY"
+    return false
 end
 
 -- Called every frame from love.update.

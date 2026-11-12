@@ -55,9 +55,12 @@ local coopPreMNB2 = preMNB2Admin
 function preMNB2Admin(...)
     -- a new field, or a battle under way being loaded (mnb2.lua:7, 262)
     local fresh = not (type(player) == "table" and player.ui_gameStarted ~= 0 and player.ui_gameStarted ~= nil)
+    -- a new Classic battle (the deploy buttons, urb_engine.lua:8824-8914) waits for every friend's READY
+    if fresh and not net.readyToStart() then return end
     local result = coopPreMNB2(...)
     local ok, err = pcall(defense.afterSetup, fresh)
     if not ok then print("[mnb_coop] defense setup: " .. tostring(err)) end
+    if type(player) == "table" and player.gameState == 0 then net.resetReady() end
     return result
 end
 
@@ -235,17 +238,26 @@ function menu_goButton(...)
         mnbCoop.notice("Only the host starts missions")
         return
     end
+    -- the host waits for every friend's READY; a mission that starts uses it up
+    if not net.readyToStart() then return end
     if campaign.active then
         local ok, err = pcall(campaign.arrangeSquad)
         if not ok then print("[mnb_coop] squad: " .. tostring(err)) end
     end
-    return coopGo(...)
+    local r = { coopGo(...) }
+    if type(player) == "table" and player.gameState == 0 then net.resetReady() end
+    return unpack(r)
 end
 
 local coopClassic = menu_classicButton
 function menu_classicButton(...)
     if net.role == "client" then
         mnbCoop.notice("Only the host starts battles")
+        return
+    end
+    -- Classic picks a mode or carries on a battle under way: both need every friend's READY
+    if not net.readyToStart() then
+        defense.armed = false
         return
     end
     -- the co-op Classic tile arms this; the game's own Classic button doesn't
