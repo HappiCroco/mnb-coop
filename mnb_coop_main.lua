@@ -121,8 +121,8 @@ function love.update(dt, ...)
         if not ok then print("[mnb_coop] watching: " .. tostring(err)) end
         if not battle.inDebrief() then
             pcall(squad.clientHud)   -- the game's HUD buttons, from this window's camera and menu page
-            pcall(squad.clientHover) -- the game's soldier card and tooltips on mouse-over
         end
+        pcall(squad.clientHover) -- the game's soldier card and tooltips on mouse-over (and the mission report's)
         return
     end
     if campaign.active then
