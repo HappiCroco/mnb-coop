@@ -213,6 +213,10 @@ What was built differs from the plan below in one way: no hand-kept field list. 
   (blood, corpses, craters), `addParticle` for the visible kinds (muzzle flashes, tracers), planes, and **sounds** via one
   wrapper on the LÖVE Source metatable `play` (reverse map Source → global name built at load), so no 1,300 patches.
 - HUD on clients: TP, wave, squad faces from the snapshot.
+- D-Day boat ride (campaign day 1, `gainz == 1 and landed == 0`): the sea is the window's background colour, which
+  the host's game sets (urb_engine.lua:40176) and a friend's never did; `battle.beforeDraw` sets it from the mirror
+  each frame. The start choices (beachFade -3/-5/-7, diffSelect1..6) are the host's: the friend's frame draws the
+  empty step before it plus "Host is choosing the ...". The two-copies canvas clears to the background colour too.
 
 ## Control (clients → host)
 **Owner's rules (2026-11-11), built in v0.5.0 (`coop_squad.lua`, headless test 25 checks):** up to **3 players**, the squad

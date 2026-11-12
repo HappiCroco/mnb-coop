@@ -958,6 +958,7 @@ function battle.stopView(why)
     for name, saved in pairs(C.savedGlobals) do _G[name] = saved.v end
     player = C.real
     player.gameState = 1
+    pcall(love.graphics.setBackgroundColor, 0, 0, 0) -- (the game's own, main.lua:4248)
     C = nil
     battle.viewing = false
     buttons = {}
@@ -1155,8 +1156,49 @@ function battle.noteDrawError(err)
     end
 end
 
+-- ---- client: the D-Day landing intro (campaign day 1, drawFiles.lua:1450-1563)
+-- The sea there is the window's background colour, set by the host's game when the boat
+-- ride starts (urb_engine.lua:40176) and back to black on landing (drawFiles.lua:2174):
+-- a friend's window never ran that, so their sea was black. Their colour follows the
+-- mirrored state instead. The start choices (difficulty, map cycle, read the brief) are
+-- the host's to click (diffSelect1..6, urb_engine.lua:44452): a friend sees the step's
+-- empty frame instead of buttons they can't press, and a note that the host is choosing.
+local SEA = { 28 / 255, 39 / 255, 49 / 255 }
+local HOST_CHOICE = { [-3] = "difficulty", [-5] = "map cycle", [-7] = "whether to read the brief" }
+
+function battle.beforeDraw()
+    if not C or type(player) ~= "table" then return end
+    local boatRide = player.gainz == 1 and player.landed == 0 and player.gameState == 0
+    if boatRide then
+        love.graphics.setBackgroundColor(SEA[1], SEA[2], SEA[3])
+    else
+        love.graphics.setBackgroundColor(0, 0, 0)
+    end
+    C.hostChoosing = nil
+    local step = tonumber(player.beachFade)
+    if boatRide and step and HOST_CHOICE[step] then
+        C.hostChoosing = HOST_CHOICE[step]
+        player.beachFade = step + 1 -- the step before it draws nothing
+        return function() player.beachFade = step end
+    end
+end
+
 function battle.drawOverlay()
     if not C then return end
+    if C.hostChoosing then
+        love.graphics.push("all")
+        love.graphics.origin()
+        love.graphics.setFont(largeFont or love.graphics.getFont())
+        local msg = C.hostName .. " is choosing the " .. C.hostChoosing .. "..."
+        if C.hostChoosing:sub(1, 7) == "whether" then msg = C.hostName .. " is choosing " .. C.hostChoosing .. "..." end
+        love.graphics.setColor(0, 0, 0, 1)
+        for _, d in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+            love.graphics.printf(msg, d[1], 85 + d[2], love.graphics.getWidth(), "center")
+        end
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf(msg, 0, 85, love.graphics.getWidth(), "center")
+        love.graphics.pop()
+    end
     if C.drawError then
         love.graphics.push("all")
         love.graphics.origin()

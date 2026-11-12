@@ -306,10 +306,12 @@ function love.draw(...)
     if battle.viewing then
         -- the host's battle drawn with the game's code: a missing piece must not
         -- crash the friend's game, it shows as a message and goes in the log once
+        local okb, restore = pcall(battle.beforeDraw)
         love.graphics.push("all")
         local args = { ... }
         local ok, err = xpcall(function() return coopDraw(unpack(args)) end, debug.traceback)
         love.graphics.pop()
+        if okb and restore then restore() end
         battle.noteDrawError(not ok and err or nil)
     else
         coopDraw(...)

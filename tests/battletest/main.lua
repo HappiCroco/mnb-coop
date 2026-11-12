@@ -241,6 +241,24 @@ battle.noteDrawError("includes/drawFiles.lua:56: bad argument #1 to 'draw'\nstac
 check(T.getClient().drawError == "includes/drawFiles.lua:56: bad argument #1 to 'draw'", "draw error noted")
 battle.noteDrawError(nil)
 check(T.getClient().drawError == nil, "draw error cleared when a frame draws")
+-- the D-Day boat ride: sea colour, and the host's start choices hidden from the friend
+local mp = battle._mirror
+player = mp
+local saved = { mp.gainz, mp.landed, mp.beachFade, mp.gameState }
+mp.gainz, mp.landed, mp.beachFade, mp.gameState = 1, 0, -3, 0
+local restore = battle.beforeDraw()
+local r, g, b = love.graphics.getBackgroundColor()
+check(math.abs(r - 28 / 255) < 0.01 and math.abs(b - 49 / 255) < 0.01, "friend's sea is the host's water colour, not black")
+check(mp.beachFade == -2 and T.getClient().hostChoosing == "difficulty", "difficulty buttons hidden; the host is choosing")
+restore()
+check(mp.beachFade == -3, "the mirrored step is put back after drawing")
+mp.beachFade = -9
+check(battle.beforeDraw() == nil and T.getClient().hostChoosing == nil, "other intro steps draw as they are")
+mp.landed = 1
+battle.beforeDraw()
+r = love.graphics.getBackgroundColor()
+check(r == 0, "landed: background black again")
+mp.gainz, mp.landed, mp.beachFade, mp.gameState = saved[1], saved[2], saved[3], saved[4]
 
 -- mission-end page: the host's page and its animation timers, nothing else
 player = hostP
