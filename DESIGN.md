@@ -314,6 +314,14 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   meant to overwhelm). Size control was scaled (12/24); crowd control after wave 100 (mnb2.lua:639, (realSquadSizer −
   12)% → spawnCombinedForce) now uses coopSizeLimit × 2 (24 in co-op Classic), and its Combined Force is wrapped
   like a special wave (whole, one side, not twinned).
+- (v0.9.11) Co-op ribbons (`coop_ribbons.lua`, ids from 201): a registry that defines `_G["rib<id>"]` (png from the mod's
+  `sprites/` via io.open; a flat fallback if missing), `ribName_<id>`, `ribDesc_<id>`, so the game's ribbon screen
+  (draws every owned ribbon in player.ribs order, 72 slots), tooltip, hasRib and announceRibbon just work. Only awarded in
+  co-op play (campaign active, or defense.on). `checkRibCondition` is wrapped: our ids go to the registry, the game's to
+  the game; the game's per-wave call for 65 also runs our checks. 201 Two-Front War (wave 100 in a defense): +2 TP cap,
+  put back after the game's clamp in the `giveTp` wrap. 202 Hold the Line (wave 50, mnb2Miss 0): award works, the
+  free-riflemen effect is a TODO. 203 Brothers in Arms (25 revives, `player.coopStats.revives`): stub until the revive
+  hook exists. Art: `tools/ribbons` (LÖVE program, drawn 4x and averaged down, fixed seed). Test: ribtest.
 - (v0.7.0) H halts only the presser's soldiers (`withOnly`: others' playerControlled hidden for the call); Alt clicks
   queue waypoints and each player's Alt release sends only theirs (`withOwnWaypoints`). Pause > Options (saves and
   leaves the battle) is refused while friends are in.
