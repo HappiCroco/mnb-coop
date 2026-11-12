@@ -51,5 +51,26 @@ coopHubBackButton()
 check(menuPage == lobby.getPage() and campaign.active, "Back goes to the Multiplayer screen, co-op still open")
 coopBackButton()
 check(menuPage == 1 and not campaign.active, "Back from Multiplayer leaves co-op for the main menu")
+
+-- Career and Squad straight from the lobby, in the same spot as on the co-op page
+menuPage = lobby.getPage()
+buttons = {}
+lobby.registerButtons()
+local at = {}
+for _, b in ipairs(buttons) do at[b.label] = b end
+check(at.coopCareer and at.coopSquad and at.coopHost and at.coopJoin, "lobby has Career, Squad, Host and Join")
+check(at.coopCareer and at.coopCareer.X == 50 and at.coopCareer.Y == 185 and at.coopSquad.Y == 430, "Career and Squad where the co-op page has them")
+ok, err = pcall(lobby.draw)
+check(ok, "lobby draws: " .. tostring(err))
+careerOpened = false
+coopCareerButton()
+check(careerOpened and campaign.active and menuPage == 2, "lobby Career opens the co-op career")
+menuPage = 1
+campaign.update()
+check(menuPage == lobby.getPage(), "back from a Career opened in the lobby lands on the lobby")
+coopSquadButton()
+check(menuPage == 3, "lobby Squad opens the squad screen")
+coopBackButton()
+check(menuPage == 1 and not campaign.active, "Back from the lobby still leaves co-op")
 print(("%d passed, %d failed"):format(passes, fails))
 love.event.quit(fails == 0 and 0 or 1)

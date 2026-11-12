@@ -325,6 +325,16 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   game hands it to the next Classic profile). It runs when the menus come back to the lobby page or the main menu
   (every menu frame), on Back from the lobby, when the co-op campaign opens, and on quit. Never active together
   with the campaign. Not covered: Steam stats/achievements the Classic code sends (steam_classicWaves, ...). Test: classictest.
+  ONE CO-OP CAREER (owner, 2026-11-12): the stand-in is gone. While co-op Classic is open only `saveMNB2.lua` goes to
+  `coop/classic/`; `saveMNB3.lua` and `backUp.lua` go to `coop/campaign/`, so the profile the game copies the Classic
+  rank and ribbons into is the co-op campaign profile (`enter()` loads it with `campaign.loadProfile`), as the real game
+  does with the real one. `mnb3Tomnb2_maxWave` is set to that profile's maxWave. An old `coop/classic/saveMNB3.lua`
+  from before is simply no longer read.
+- (v0.9.11) Lobby layout (owner, 2026-11-12): CAREER and SQUAD sit in column 1 of the lobby too, the same tiles in the
+  same place as on the co-op page and the game's main menu; they open the co-op profile (`campaign.enter`) and the
+  game's own screen, and its Back returns to the page they came from (`lobby.returnPage` / `lobby.backPage()`, used by
+  campaign.update). HOST / JOIN (CANCEL while connecting, READY in a lobby) moved to buttons right of the party cards;
+  CLOSE LOBBY / LEAVE LOBBY is the last link of the connection tile. Test: hubtest.
 - (v0.9.11) Co-op ribbons (`coop_ribbons.lua`, ids from 201): a registry that defines `_G["rib<id>"]` (png from the mod's
   `sprites/` via io.open; a flat fallback if missing), `ribName_<id>`, `ribDesc_<id>`, so the game's ribbon screen
   (draws every owned ribbon in player.ribs order, 72 slots), tooltip, hasRib and announceRibbon just work. Only awarded in

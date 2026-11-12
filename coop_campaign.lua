@@ -56,7 +56,12 @@ end
 
 local function mapPath(path)
     local dir = redirectDir()
-    if dir and type(path) == "string" and REDIRECT[path] then return dir .. "/" .. path end
+    if dir and type(path) == "string" and REDIRECT[path] then
+        -- co-op Classic keeps only its Classic save (saveMNB2) in its own folder: the campaign
+        -- profile it reads and writes is the co-op campaign's, so one co-op career shows both
+        if dir == campaign.classic.DIR and path ~= "saveMNB2.lua" then dir = campaign.DIR end
+        return dir .. "/" .. path
+    end
     return path
 end
 
@@ -232,8 +237,10 @@ function campaign.update()
     end
     if not campaign.active then return end
     if not campaign.onSquadPage() then campaign.setPage(1) end
-    -- no main menu while co-op is open: every "back to the main menu" lands on the co-op page
-    if menuPage == 1 and mnbCoop and mnbCoop.lobby then menuPage = mnbCoop.lobby.getHubPage() end
+    -- no main menu while co-op is open: every "back to the main menu" lands on the co-op page,
+    -- or on the lobby when Career or Squad was opened from there
+    local lobby = mnbCoop and mnbCoop.lobby
+    if menuPage == 1 and lobby then menuPage = (lobby.backPage or lobby.getHubPage)() end
 end
 
 -- The game saves on quit; with the redirect on, that save lands in the co-op files.
@@ -259,9 +266,10 @@ end
 -- the game's own newProfile path).
 -- The Classic code also reads and writes "saveMNB3.lua" (leaving Classic loads
 -- the campaign profile and copies the Classic rank and ribbons into it,
--- mnb2.lua:1142-1192), so that file is redirected too: a stand-in campaign
--- profile of its own sits in coop/classic/, the real campaign save is never read.
---   enter(): keep the real `player`, redirect on, put the stand-in in its place.
+-- mnb2.lua:1142-1192). That file goes to the CO-OP CAMPAIGN profile
+-- (coop/campaign/, owner 2026-11-12: one co-op career, like the real game, where
+-- Career shows campaign and Classic together). The real campaign save is never read.
+--   enter(): keep the real `player`, redirect on, put the co-op profile in its place.
 --   exit():  save what is loaded, redirect off, real `player` back. Happens when
 --            the menus come back to the lobby or the main menu, on Back from the
 --            lobby, on opening the co-op campaign, and on quit.
@@ -280,15 +288,6 @@ local function copyClassicSettings(from, to)
     end
 end
 
-local function readLua(path)
-    if not realFs.getInfo(path) then return nil end
-    local ok, chunk = pcall(realFs.load, path)
-    if not (ok and type(chunk) == "function") then return nil end
-    local ok2, data = pcall(chunk)
-    if ok2 and type(data) == "table" then return data end
-    return nil
-end
-
 function classic.hasSave()
     return realFs.getInfo(classic.DIR .. "/saveMNB2.lua") ~= nil
 end
@@ -301,33 +300,20 @@ function classic.enter()
     pcall(fs.createDirectory, classic.DIR)
     local base = player
     classic.active = true -- before anything below can make the game write a file
-    local p = readLua(classic.DIR .. "/saveMNB3.lua")
-    if not p then
-        p = asPlayer({}, function()
-            newProfile()
-            return player
-        end)
-    end
+    -- the co-op campaign profile (made with fresh rookies if there is none yet)
+    local p = campaign.loadProfile(base)
     if type(p) ~= "table" then
         classic.active = false
-        return false, "could not make a co-op Classic profile"
+        return false, "could not make a co-op profile"
     end
-    -- bloop first, as in loadProfile: updateProfile takes a profile without it for an old one
-    p.bloop = base.bloop or p.bloop or 0
-    local updated = asPlayer(p, function()
-        updateProfile(player)
-        return player
-    end)
-    if type(updated) == "table" then p = updated end
     p.gameType, p.gameState = 0, 1
     copyClassicSettings(base, p)
     classicReal = base
-    -- the game hands this on to the next Classic profile it loads: not the real session's
+    -- the game hands this on to the next Classic profile it loads: the co-op one's, not the real session's
     classicMaxWave = rawget(_G, "mnb3Tomnb2_maxWave")
-    rawset(_G, "mnb3Tomnb2_maxWave", nil)
+    rawset(_G, "mnb3Tomnb2_maxWave", tonumber(p.maxWave))
     player = p
-    local data = serialize(p)
-    if data then pcall(realFs.write, classic.DIR .. "/saveMNB3.lua", data) end
+    writeSaveFile(p)
     print("[mnb_coop] co-op Classic profile " .. (classic.hasSave() and "opened" or "started") .. ", real Classic untouched")
     return true
 end
@@ -339,8 +325,8 @@ function classic.exit()
     local viewing = mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing
     if type(cur) == "table" and not viewing then
         local data = serialize(cur)
-        local name = cur.gameType == 1 and "saveMNB2.lua" or "saveMNB3.lua"
-        if data then pcall(realFs.write, classic.DIR .. "/" .. name, data) end
+        local path = cur.gameType == 1 and (classic.DIR .. "/saveMNB2.lua") or REDIRECT["saveMNB3.lua"]
+        if data then pcall(realFs.write, path, data) end
     end
     classic.active = false
     rawset(_G, "mnb3Tomnb2_maxWave", classicMaxWave)

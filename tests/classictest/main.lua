@@ -61,17 +61,19 @@ check(not classic.active and not classic.hasSave(), "nothing yet")
 
 -- first co-op Classic game: fresh profile, real one aside
 check(classic.enter(), "enter")
-check(classic.active and player ~= realPlayer and player.name == "fresh" and player.gameType == 0, "stand-in campaign profile loaded")
+check(classic.active and player ~= realPlayer and player.name == "fresh" and player.gameType == 0 and player.coopCampaign == 1, "the co-op campaign profile loaded")
 check(player.option_volume == 2 and player.scrollSpeed == 9, "settings carried in")
-check(mnb3Tomnb2_maxWave == nil, "the real session's max wave is not handed to the co-op Classic profile")
+check(mnb3Tomnb2_maxWave == 0, "the co-op profile's max wave is handed on, not the real session's")
 fakeClassicButton()
 check(player.gameType == 1 and player.name == "fresh" and player.mnb2Rank == 0 and player.totalMNB2Game == 0, "fresh Classic profile (not the real rank)")
 check(player.option_volume == 2 and player.scrollSpeed == 9, "settings carried into Classic")
-check(fs.getInfo("coop/classic/saveMNB2.lua") ~= nil and fs.getInfo("coop/classic/saveMNB3.lua") ~= nil, "game's files went to coop/classic")
+check(fs.getInfo("coop/classic/saveMNB2.lua") ~= nil and fs.getInfo("coop/campaign/saveMNB3.lua") ~= nil, "Classic save in coop/classic, campaign profile in coop/campaign")
+check(fs.getInfo("coop/classic/saveMNB3.lua") == nil, "no stand-in campaign profile any more")
 check(fs.read("saveMNB2.lua") == fs.read("coop/classic/saveMNB2.lua"), "game's read of saveMNB2 sees the co-op file")
 fakeMissionEnd()
 fakeMissionEnd()
 check(player.gameType == 0 and player.totalMNB2Game == 2 and player.mnb2Rank == 2, "ribbon counters grew on the co-op profile")
+check(fs.read("saveMNB3.lua") == fs.read("coop/campaign/saveMNB3.lua"), "the game's campaign-profile writes go to the co-op campaign save")
 -- real files untouched (read with the redirect off)
 classic.active = false
 check(fs.read("saveMNB3.lua") == real3 and fs.read("saveMNB2.lua") == real2 and fs.read("backUp.lua") == realBackup, "real saves untouched during co-op Classic")
@@ -110,12 +112,11 @@ check(not classic.active and player == realPlayer, "exit by hand")
 classic.exit() -- twice is harmless
 check(player == realPlayer, "second exit does nothing")
 classic.enter()
-newProfile = function() local p = player p.dayz = 1 p.gameType = 0 p.name = "campcoop" p.deployedTroops = {} end
-check(campaign.enter() and campaign.active and not classic.active and player.name == "campcoop", "opening the co-op campaign closes Classic first")
+check(campaign.enter() and campaign.active and not classic.active and player.name == "fresh", "opening the co-op campaign closes Classic first")
+check(player.mnb2Rank == 2 and player.totalMNB2Game == 2, "one co-op career: the co-op campaign profile has the co-op Classic rank")
 check(select(1, classic.enter()) == false and not classic.active, "no co-op Classic while the campaign is open")
 campaign.exit()
 check(player == realPlayer, "campaign exit gives the real profile back")
-check(fs.getInfo("coop/campaign/saveMNB3.lua") ~= nil and fs.getInfo("coop/classic/saveMNB3.lua") ~= nil, "each has its own folder")
 check(fs.read("saveMNB3.lua") == real3, "real campaign save untouched")
 
 -- quitting in co-op Classic: the game saves (redirected), then the real profile is back and saved

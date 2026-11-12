@@ -552,7 +552,9 @@ squad.HUD_LOCAL = HUD_LOCAL
 -- mnb2Retreat ends the battle (ui_squadLostFade, mnb2.lua:2163), trenchRetreatz sets
 -- mnb2Miss = 10 (trench.lua:581), trenchUp/trenchRetreat move every allied soldier
 -- (trench.lua:560, 603) with no owner check.
-local HUD_HOST_ONLY = { mnb2Retreat = true, trenchRetreatz = true, trenchUp = true, trenchRetreat = true }
+-- (mnb2Taunt calls the next wave for everyone: the host's call too, owner 2026-11-12)
+local HUD_HOST_ONLY = { mnb2Retreat = true, trenchRetreatz = true, trenchUp = true, trenchRetreat = true,
+    mnb2Taunt = true }
 squad.HUD_HOST_ONLY = HUD_HOST_ONLY
 
 function squad.isHudLabel(label)
@@ -840,6 +842,12 @@ function squad.clientMousereleased(x, y, button)
         press = nil
         -- (inline box test: inBox is defined further down this file)
         if x > 32 and x < 92 and y > 686 and y < 716 and mnbCoop and mnbCoop.battle and mnbCoop.battle.leaveReport then
+            -- the game's menu click (weaponInspect1..5, like its own buttons), played on this
+            -- window only: the view ends right after, so play it before
+            pcall(function()
+                local sfx = _G["weaponInspect" .. randNbr(5)] or rawget(_G, "clickSound")
+                if sfx then sfx:clone():play() end
+            end)
             mnbCoop.battle.leaveReport()
         end
         return
