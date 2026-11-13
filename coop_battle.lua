@@ -1131,6 +1131,44 @@ end
 -- (particlesSystem.lua:6531-6942 and 1-33): lifetime, drift, spin, drag, fade,
 -- grow/shrink, flight along rotationz. What a particle DOES when it lands
 -- (explosion, blood, loot) comes from the host as its own event.
+-- Thrown and fired grenades fly to a spot (targetx/targety): the game turns them toward it
+-- every frame, swells them on the way up (the lob) and bounces them off it with a short
+-- roll (particlesSystem.lua:6566-6591, 6685-6733). Without that they flew straight on past
+-- it on a teammate's screen (owner, 2026-11-13). The roll's direction is random, as in the game.
+local LOBBED = { fragGrenade = true, flarePart = true, contactGrenade = true, redFlarePart = true,
+    rifleGrenade = true, leuchtGrenade = true, rocketGrenade = true, stielgranate = true }
+local FACES_FLIGHT = { rifleGrenade = true, leuchtGrenade = true, rocketGrenade = true }
+
+local function steerLobbed(p, dt)
+    local tx, ty = tonumber(p.targetx), tonumber(p.targety)
+    if not tx or not ty then return end
+    local bounce, vel = tonumber(p.bounce) or 0, tonumber(p.velocity) or 0
+    local d = math.sqrt((p.x - tx) ^ 2 + (p.y - ty) ^ 2)
+    if d < 10 and bounce == 0 then
+        p.bounce, p.velocity, p.drag, p.spin = 1, 100 + love.math.random(1, 200), 5, 0
+        p.targetx = p.x + 150 - love.math.random(1, 300)
+        p.targety = p.y + 150 - love.math.random(1, 300)
+        return
+    end
+    if bounce ~= 1 then
+        local r = math.atan2(p.y - ty, p.x - tx) + 1.57079632679
+        p.rotationz = r
+        if FACES_FLIGHT[p.typez] then p.innerRotation = r end
+    end
+    local lob = tonumber(p.lob) or 0
+    if lob > 0 and vel ~= 0 and (tonumber(p.walled) or 0) == 0 then
+        p.expand = d > (lob / 2) * dt and 0.1 or -0.1
+    end
+    local expand = tonumber(p.expand) or 0
+    if expand > 0 then
+        if vel > 0 and (tonumber(p.walled) or 0) == 0 and bounce == 0 then
+            p.scale = math.min(2, (tonumber(p.scale) or 1) + expand * dt)
+        end
+    elseif (tonumber(p.shrink) or 0) == 0 then
+        p.scale = 1
+    end
+end
+
 local function moveParticles(list, dt)
     if type(list) ~= "table" then return end
     local step = dt * 60
@@ -1139,6 +1177,8 @@ local function moveParticles(list, dt)
         if type(p) ~= "table" or type(p.x) ~= "number" or type(p.y) ~= "number" then
             table.remove(list, i)
         else
+            local lobbed = LOBBED[p.typez]
+            if lobbed then steerLobbed(p, dt) end
             local life = (tonumber(p.lifeSpan) or 0) - dt
             p.lifeSpan = life
             p.innerRotation = (tonumber(p.innerRotation) or 0) + (tonumber(p.spin) or 0) * step
@@ -1155,7 +1195,7 @@ local function moveParticles(list, dt)
             local fade = tonumber(p.fade) or 0
             if fade > 0 then p.alpha = (tonumber(p.alpha) or 0) - fade * step end
             local expand, shrink = tonumber(p.expand) or 0, tonumber(p.shrink) or 0
-            if expand ~= 0 then p.scale = math.min(4, (tonumber(p.scale) or 1) + expand * dt) end
+            if expand ~= 0 and not lobbed then p.scale = math.min(4, (tonumber(p.scale) or 1) + expand * dt) end
             if shrink > 0 and (tonumber(p.scale) or 0) > 0.0001 then p.scale = p.scale - shrink * dt end
             local rot = tonumber(p.rotationz)
             if vel ~= 0 and rot then
@@ -1579,6 +1619,7 @@ battle._test = {
     setHost = function(h) H = h end,
     scanSourceNames = scanSourceNames,
     updateRate = function(now) return updateRate(now) end,
+    moveParticles = moveParticles,
 }
 
 return battle

@@ -471,5 +471,27 @@ do
   net.seats, net.option = savedSeats, savedOption
 end
 
+-- a thrown grenade on a teammate's screen lands on its spot and rolls off it, never flies on
+-- past it (owner, 2026-11-13: "they fly past target")
+do
+  -- thrown to the right, with the game's slightly-off start angle (throwFrag: atan2 + 1.5)
+  local g = { typez = "fragGrenade", x = 100, y = 300, targetx = 400, targety = 300, velocity = 300, drag = 0,
+    rotationz = math.atan2(0, -300) + 1.5, lob = 300, bounce = 0, walled = 0, scale = 1, expand = 0, shrink = 0,
+    lifeSpan = 10, spin = 0, fade = 0, drift = 0 }
+  local list = { g }
+  local far = 0
+  for _ = 1, 120 do
+    T.moveParticles(list, 1 / 60)
+    if g.bounce == 0 then far = math.max(far, g.x) end
+  end
+  check(g.bounce == 1, "the grenade reached its spot and bounced")
+  check(far <= 410, "it never went past the spot before landing (" .. far .. ")")
+  check(math.abs(g.x - 400) <= 160 and math.abs(g.y - 300) <= 160, "and rolled only a little way from it")
+  local rg = { typez = "rifleGrenade", x = 0, y = 0, targetx = 0, targety = 300, velocity = 400, drag = 0, rotationz = 0,
+    lob = 300, bounce = 0, walled = 0, scale = 1, expand = 0, shrink = 0, lifeSpan = 10, spin = 0, fade = 0, drift = 0 }
+  T.moveParticles({ rg }, 1 / 60)
+  check(rg.y > 0 and math.abs(rg.x) < 1, "a rifle grenade turns toward its spot")
+end
+
 print(("%d passed, %d failed"):format(passes, fails))
 love.event.quit(fails == 0 and 0 or 1)
