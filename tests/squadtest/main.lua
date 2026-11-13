@@ -193,6 +193,21 @@ check(campaign.sanitize({ spec = "hacker" }).spec == "", "an unknown spec become
 weaponCreator = savedWC
 spec_medic, spec_, allied_idle, face_eyes2, perk_1, perk_2, award5 = nil, nil, nil, nil, nil, nil, nil
 
+-- ---- mission start: a teammate's soldier far from the host's (an old position, or the
+-- game's x 12650 for one with none) is put beside the host's soldiers
+do
+  local saveSeats = player.coopSlotSeats
+  player.coopSlotSeats = { 1, 2, 1, 2, 1, 1 }
+  for i = 1, 6 do T()[i].x, T()[i].y = 150 + i * 10, 400 end
+  T()[2].x = 12650
+  T()[4].x = nil
+  local nearX = T()[6].x
+  campaign.placeExtras(false)
+  check(math.abs(T()[2].x - 165) < 60 and math.abs(T()[4].x - 165) < 60 and T()[6].x == nearX,
+    "a teammate's soldier on the far right (or with no position) starts beside the host's; the rest stay")
+  player.coopSlotSeats = saveSeats
+end
+
 -- ---- New war: day 1 again, the six soldiers and the career come along
 player.dayz, player.gainz = 30, 25
 player.rank, player.experience, player.skill, player.ribs, player.mnb2Rank = 5, 9000, { { id = 7 } }, { 3, 4 }, 2

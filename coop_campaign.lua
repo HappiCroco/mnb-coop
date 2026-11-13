@@ -1094,9 +1094,35 @@ end
 
 -- After the game set up the mission: soldiers 7+ (later 4-player mode) stand next
 -- to soldiers 1..6 and, on D-Day, get the same perks and rifles the game gives 1..6.
+-- Also: a teammate's soldier comes with the position he had when his roster was last
+-- saved (the end of some earlier mission, or, after a game closed mid-battle, wherever he
+-- was walking), and the game's profile repair puts one with no position at x 12650, the
+-- far right (urb_engine.lua:41587). Owner, 2026-11-12: "his soldiers spawned on the far
+-- right". So a teammate's soldier who starts far from the host's own soldiers is put
+-- beside them.
 function campaign.placeExtras(dday)
     if not campaign.active then return end
     local troops = player.deployedTroops
+    if not dday then
+        local seats = (campaign.profile or player).coopSlotSeats or {}
+        local sum, n = 0, 0
+        for i = 1, 6 do
+            local t = troops[i]
+            if type(t) == "table" and (seats[i] or 1) == 1 and tonumber(t.x) then sum, n = sum + t.x, n + 1 end
+        end
+        local homeX = n > 0 and sum / n or nil
+        local k = 0
+        for i = 1, coopSquadMax() do
+            local t = troops[i]
+            if homeX and type(t) == "table" and (seats[i] or 1) ~= 1 and (not tonumber(t.x) or math.abs(t.x - homeX) > 600) then
+                k = k + 1
+                t.x = math.floor(homeX) + randNbr(80) - 40
+                t.y = 300 + ((k * 47) % 260)
+                t.targetx, t.targety = t.x, t.y
+            end
+        end
+        if k > 0 then print(string.format("[mnb_coop] %d teammate soldier(s) moved to the start, beside the host's", k)) end
+    end
     for i = 7, coopSquadMax() do
         local t, buddy = troops[i], troops[((i - 1) % 6) + 1]
         if type(t) == "table" and type(buddy) == "table" then
