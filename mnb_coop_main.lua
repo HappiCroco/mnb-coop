@@ -24,9 +24,40 @@ local defense = require("includes/mods/mnb_coop/coop_defense")
 local wallet = require("includes/mods/mnb_coop/coop_wallet")
 local qmInput = require("includes/mods/mnb_coop/coop_qminput")
 local ribbons = require("includes/mods/mnb_coop/coop_ribbons")
+local steam = require("includes/mods/mnb_coop/coop_steam")
 
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
-    squad = squad, defense = defense, ribbons = ribbons, wallet = wallet, version = net.VERSION }
+    squad = squad, defense = defense, ribbons = ribbons, wallet = wallet, steam = steam, version = net.VERSION }
+
+-- Steam's Join Game and invites (coop_steam.lua): the game started Steam already (main.lua:29)
+do
+    local ok, err = pcall(steam.init)
+    if not ok then print("[mnb_coop] steam: " .. tostring(err)) end
+    if not steam.ok then print("[mnb_coop] steam join off: " .. tostring(steam.why)) end
+    lobby.steam = steam
+end
+
+-- A Steam join (invite accepted, Join Game, or the game started by Steam for one): taken
+-- once this machine is in the menus and not connected. Returns true when it is dealt with.
+local function steamJoinNow(address)
+    if battle.viewing or type(player) ~= "table" or player.gameState == 0 then return false end
+    if net.role ~= "offline" then
+        if net.role == "client" and lobby.address == address then return true end -- already there
+        mnbCoop.notice("Steam join: leave this lobby first, then accept again")
+        return true
+    end
+    if menuPage ~= 1 and menuPage ~= lobby.getPage() then return false end -- (intro, other screens: wait)
+    profile.loadSettings()
+    lobby.address = address
+    lobby.preview = nil
+    menuPage = lobby.getPage()
+    mouseOverText = ""
+    if net.join(address) then
+        profile.settings.lastAddress = address
+        profile.saveSettings()
+    end
+    return true
+end
 
 -- Co-op ribbons (coop_ribbons.lua, ids 201+): pictures, names and texts become game globals,
 -- and checkRibCondition hands our ids to the registry
@@ -215,6 +246,12 @@ local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
     pcall(lobby.updateRoom) -- teammates follow the host into and out of the ready room
+    if steam.ok then
+        -- Join Game on the host while a seat is free; a join that came in, once the menus can take it
+        local okst, errst = pcall(steam.update, net.role == "host" and lobby.shareAddress() or nil,
+            net.playerCount() < net.MAX_SEATS, steamJoinNow)
+        if not okst then print("[mnb_coop] steam: " .. tostring(errst)) end
+    end
     pcall(lobby.updatePresence) -- where I am, for the others' lobby cards
     local okw, errw = pcall(window.update)
     if not okw then print("[mnb_coop] window: " .. tostring(errw)) end
@@ -627,6 +664,7 @@ local coopQuit = love.quit
 function love.quit(...)
     battle.stopView("quit") -- the real `player` must be back before the game saves it
     net.shutdown()
+    pcall(steam.shutdown) -- no Join Game left on a closed game
     local result
     if coopQuit then result = coopQuit(...) end -- the game saves here (co-op files if co-op campaign is on)
     pcall(campaign.onQuitAfterGameSaved)

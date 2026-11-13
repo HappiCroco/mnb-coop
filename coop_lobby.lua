@@ -121,6 +121,8 @@ end
 local function shareAddress()
     return baseAddress() .. (net.joinCode and ("#" .. net.joinCode) or "")
 end
+lobby.shareAddress = shareAddress -- (Steam's Join Game and invites carry it, coop_steam.lua)
+lobby.steam = nil -- coop_steam, set by mnb_coop_main
 
 local function requireCode()
     return net.isOn("joinCode", true)
@@ -261,7 +263,11 @@ local function links()
             or { "coopLocal", "USE LOCAL ADDRESS", "Go back to your home-network address " .. (lobby.lanIp or "") },
             net.joinCode and { "coopNewCode", "NEW CODE", "Make a new join code. Players already in stay;\nanyone with the old address can't join any more." }
             or { "coopNothing", "", "" },
-            { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
+            (lobby.steam and lobby.steam.ok)
+            and { "coopInvite", "INVITE (STEAM)", "Steam's invite window: friends who accept join this lobby.\n" ..
+                "Your friends also see Join Game on you in their Steam friends list.\n" ..
+                "They still need to reach this address: online, paste your playit.gg address above first." }
+            or { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
             ",\npaste its address above, then COPY ADDRESS and send it to your teammates." },
             { "coopLeave", "CLOSE LOBBY", "Close the lobby; everyone is disconnected" },
         }
@@ -473,6 +479,13 @@ function coopClearButton()
 end
 
 function coopHelpButton() end
+
+function coopInviteButton()
+    click()
+    local ok, why = false, "Steam isn't available"
+    if lobby.steam then ok, why = lobby.steam.openInvite(shareAddress()) end
+    if not ok then flash("Steam invite: " .. tostring(why)) end
+end
 
 local function seatClick(i)
     if net.role == "host" and not isMe(i) and net.seats[i] then

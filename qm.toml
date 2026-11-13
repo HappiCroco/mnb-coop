@@ -48,6 +48,12 @@ name = "includes/mods/mnb_coop/coop_wallet"
 
 [[patches]]
 [patches.module]
+source = "coop_steam.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_steam"
+
+[[patches]]
+[patches.module]
 source = "coop_squad.lua"
 before = "main.lua"
 name = "includes/mods/mnb_coop/coop_squad"

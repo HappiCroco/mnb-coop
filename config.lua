@@ -20,6 +20,13 @@ return {
             description = "Hosted lobbies get a code that rides along in COPY ADDRESS. Strangers who find your address can't get in without it.",
         },
         {
+            id = "steamJoin",
+            label = "Steam invites and Join Game",
+            type = "checkbox",
+            default = true,
+            description = "Hosting shows Join Game on you in your friends' Steam friends list, and the lobby gets an INVITE (STEAM) link. Accepting joins the lobby, even when the game was closed. Takes effect when the game starts.",
+        },
+        {
             id = "syncRate",
             label = "Battle updates per second (host)",
             type = "cycle",
