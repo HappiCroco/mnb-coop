@@ -219,6 +219,18 @@ end
 
 -- Every frame: teammates follow the host's ready room in and out; a host who lost the lobby leaves it.
 function lobby.updateRoom()
+    -- Back on the mod options opened from CO-OP OPTIONS: to the lobby, not the main menu
+    -- (owner, 2026-11-12)
+    if lobby.optionsFrom then
+        local menu = modMenu()
+        if menuPage == 1 then
+            menuPage = lobby.optionsFrom
+            mouseOverText = ""
+            lobby.optionsFrom = nil
+        elseif not (menu and menuPage == menu.PAGE_MOD_OPTIONS) then
+            lobby.optionsFrom = nil
+        end
+    end
     local room = lobby.getRoomPage()
     local battle = mnbCoop and mnbCoop.battle
     if battle and battle.viewing then return end -- the battle has begun (or a report is still open)
@@ -659,6 +671,9 @@ function coopOptionsButton()
             return
         end
         menuPage = menu.PAGE_MOD_OPTIONS
+        -- its Back goes to the main menu: from here it comes back to the lobby (lobby.updateRoom)
+        lobby.optionsFrom = lobby.getPage()
+        lobby.returnPage = lobby.getPage() -- (with the co-op save open, campaign.update asks this)
         mouseOverText = ""
     else
         net.status = "Update QuarterMaster (1.8 or newer) to change co-op options"
