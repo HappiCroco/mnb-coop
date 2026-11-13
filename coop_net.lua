@@ -643,6 +643,11 @@ function net.join(text)
             net.status = "That Steam address isn't right"
             return false
         end
+        if sid == net.steam.mySteamId() then
+            -- two copies on one PC share one Steam account, and Steam can't connect an account to itself
+            net.status = "That's your own Steam address: on one PC, join 127.0.0.1 instead"
+            return false
+        end
         reset()
         myJoinCode = scode ~= "" and scode:upper() or nil
         net.samePC = false
