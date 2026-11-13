@@ -160,7 +160,7 @@ local ownAddress = hostNet.steamAddress()
 local selfNet = freshNet()
 check(not selfNet.join(ownAddress) and selfNet.status:find("127.0.0.1", 1, true) ~= nil, "joining your own Steam address says to use 127.0.0.1")
 me = C
-check(joinNet.join(hostNet.steamAddress() .. "#" .. hostNet.joinCode) and joinNet.role == "connecting", "joining with steam:<id>#CODE")
+check(joinNet.join(ownAddress .. "#" .. hostNet.joinCode) and joinNet.role == "connecting", "joining with steam:<id>#CODE")
 local function pump(n)
   for _ = 1, n do
     clock = clock + 0.02
