@@ -146,7 +146,7 @@ player = { rank = 1, mnb2Rank = 1, ribs = {}, eyes = 1, nose = 1, mouth = 1, hai
 rankTell = function(n) return "Rank" .. n end
 mnb2RankTell = function(n) return "Cmd" .. n end
 modLibrary = { option = function() return nil end, debugLog = function() end }
-fake.SteamAPI_ISteamUser_GetSteamID = function() local v = ffi.new("uint64_t", 0) for d in H:gmatch("%d") do v = v * 10 + (d:byte() - 48) end return v end
+fake.SteamAPI_ISteamUser_GetSteamID = function() local v = ffi.new("uint64_t", 0) for d in me:gmatch("%d") do v = v * 10 + (d:byte() - 48) end return v end
 local function freshNet()
   package.loaded["includes/mods/mnb_coop/coop_net"] = nil
   local n = require("includes/mods/mnb_coop/coop_net")
@@ -156,6 +156,9 @@ end
 local hostNet, joinNet = freshNet(), freshNet()
 me = H
 check(hostNet.hostGame(47998) and hostNet.steamAddress() == "steam:" .. H, "hosting: reachable through Steam (" .. tostring(hostNet.steamAddress()) .. ")")
+local ownAddress = hostNet.steamAddress()
+local selfNet = freshNet()
+check(not selfNet.join(ownAddress) and selfNet.status:find("127.0.0.1", 1, true) ~= nil, "joining your own Steam address says to use 127.0.0.1")
 me = C
 check(joinNet.join(hostNet.steamAddress() .. "#" .. hostNet.joinCode) and joinNet.role == "connecting", "joining with steam:<id>#CODE")
 local function pump(n)
