@@ -24,9 +24,45 @@ local defense = require("includes/mods/mnb_coop/coop_defense")
 local wallet = require("includes/mods/mnb_coop/coop_wallet")
 local qmInput = require("includes/mods/mnb_coop/coop_qminput")
 local ribbons = require("includes/mods/mnb_coop/coop_ribbons")
+local steam = require("includes/mods/mnb_coop/coop_steam")
+local cheats = require("includes/mods/mnb_coop/coop_cheats") -- F6 test panel (option testCheats)
 
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
-    squad = squad, defense = defense, ribbons = ribbons, wallet = wallet, version = net.VERSION }
+    squad = squad, defense = defense, ribbons = ribbons, wallet = wallet, steam = steam, version = net.VERSION }
+
+-- Steam's Join Game, invites and connections (coop_steam.lua). The game starts Steam in
+-- love.load (main.lua:29), which runs after this file: so ours starts on the first frame.
+lobby.steam = steam
+net.steam = steam -- hosting and joining through Steam's relays ("steam:<id>")
+local steamTried = false
+local function startSteam()
+    steamTried = true
+    local ok, err = pcall(steam.init)
+    if not ok then print("[mnb_coop] steam: " .. tostring(err)) end
+    if not steam.ok then print("[mnb_coop] steam join off: " .. tostring(steam.why)) end
+end
+
+-- A Steam join (invite accepted, Join Game, or the game started by Steam for one): taken
+-- once this machine is in the menus and not connected. Returns true when it is dealt with.
+local function steamJoinNow(address)
+    if battle.viewing or type(player) ~= "table" or player.gameState == 0 then return false end
+    if net.role ~= "offline" then
+        if net.role == "client" and lobby.address == address then return true end -- already there
+        mnbCoop.notice("Steam join: leave this lobby first, then accept again")
+        return true
+    end
+    if menuPage ~= 1 and menuPage ~= lobby.getPage() then return false end -- (intro, other screens: wait)
+    profile.loadSettings()
+    lobby.address = address
+    lobby.preview = nil
+    menuPage = lobby.getPage()
+    mouseOverText = ""
+    if net.join(address) then
+        profile.settings.lastAddress = address
+        profile.saveSettings()
+    end
+    return true
+end
 
 -- Co-op ribbons (coop_ribbons.lua, ids 201+): pictures, names and texts become game globals,
 -- and checkRibCondition hands our ids to the registry
@@ -96,6 +132,7 @@ end
 local battleHostMessage = net.onHostMessage
 net.onHostMessage = function(msg)
     if msg.t == "results" then return campaign.queueResults(msg) end
+    if msg.t == "career" then return campaign.queueCareer(msg) end -- my career XP from the host's battle
     if msg.t == "prompt" then return squad.onPrompt(msg) end -- my armed skill/item (aiming cursor)
     if msg.t == "ui" then return squad.onUi(msg) end         -- my HUD menu page after a button
     if msg.t == "wallet" then return wallet.onHostMessage(msg) end -- my own TP (Classic wallets)
@@ -214,6 +251,13 @@ local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
     pcall(lobby.updateRoom) -- teammates follow the host into and out of the ready room
+    if not steamTried then startSteam() end
+    if steam.ok then
+        -- Join Game on the host while a seat is free; a join that came in, once the menus can take it
+        local okst, errst = pcall(steam.update, net.role == "host" and lobby.inviteAddress() or nil,
+            net.playerCount() < net.MAX_SEATS, steamJoinNow)
+        if not okst then print("[mnb_coop] steam: " .. tostring(errst)) end
+    end
     pcall(lobby.updatePresence) -- where I am, for the others' lobby cards
     local okw, errw = pcall(window.update)
     if not okw then print("[mnb_coop] window: " .. tostring(errw)) end
@@ -372,6 +416,56 @@ iconClick = squad.wrapIconClick(iconClick)
 -- XP day cap in the co-op campaign (coop_campaign.lua): no farming the easy days.
 giveXp = campaign.wrapGiveXp(giveXp)
 
+-- weaponFiring (urb_engine.lua:9607) measures the shot only when targetPointer > 0, then
+-- compares the distance anyway: a soldier aiming at a troop whose id is 0 or below crashed
+-- the host (owner, 2026-11-12, urb_engine.lua:9865 "compare number with nil"). Such a shot
+-- is skipped (the soldier picks a new target) and logged once, to find who has that id.
+local coopWeaponFiring = weaponFiring
+local loggedBadTarget = false
+function weaponFiring(idz, ...)
+    local t = type(player) == "table" and type(player.deployedTroops) == "table" and player.deployedTroops[idz]
+    if type(t) == "table" and (tonumber(t.targetPointer) or 0) <= 0 then
+        if not loggedBadTarget then
+            loggedBadTarget = true
+            local who = {}
+            for _, o in ipairs(player.deployedTroops) do
+                if type(o) == "table" and (tonumber(o.id) or 0) <= 0 then
+                    who[#who + 1] = string.format("%s/%s id=%s squad=%s seat=%s owner=%s twin=%s", tostring(o.name), tostring(o.faction),
+                        tostring(o.id), tostring(o.coopSquad), tostring(o.coopSeat), tostring(o.coopOwner), tostring(o.coopSide))
+                end
+            end
+            print(string.format("[mnb_coop] skipped a shot at target %s by %s (%s); troops with id <= 0: %s",
+                tostring(t.targetPointer), tostring(t.name), tostring(t.faction), #who > 0 and table.concat(who, "; ") or "none"))
+        end
+        t.targetPointer = 0 -- (the game's "no target", ai.lua:2730)
+        return
+    end
+    return coopWeaponFiring(idz, ...)
+end
+
+-- Career XP for the teammates (coop_campaign.lua sendCareer): the gain the game's own
+-- end-of-battle bookkeeping gave the host goes to each teammate too.
+local coopPostMission = postMissionAdmin
+function postMissionAdmin(...)
+    local before = type(player) == "table" and tonumber(player.experience) or nil
+    local r = { coopPostMission(...) }
+    if campaign.active and before and type(player) == "table" then
+        pcall(campaign.sendCareer, "campaign", (tonumber(player.experience) or 0) - before)
+    end
+    return unpack(r)
+end
+
+local coopPostMNB2 = postMNB2Mission
+function postMNB2Mission(...)
+    local p = type(player) == "table" and player or {}
+    local before, wave, sub = tonumber(p.mnb2Experience), tonumber(p.currentWave) or 0, p.mnb2SubGame
+    local r = { coopPostMNB2(...) } -- (it ends on the campaign profile, with the Classic stats copied in)
+    if campaign.classic.active and before and sub ~= 8 and type(player) == "table" then
+        pcall(campaign.sendCareer, "classic", (tonumber(player.mnb2Experience) or 0) - before, wave)
+    end
+    return unpack(r)
+end
+
 local coopPreGame = preGameAdmin
 function preGameAdmin(...)
     local dday = campaign.active and player.gainz == 1 and player.landed == 0
@@ -395,6 +489,7 @@ local VIEW_KEYS = { f9 = true, tab = true, f3 = true, f4 = true }
 local function onKeypressed(key, ...)
     if lobby.wantsKeyboard() then return lobby.keypressed(key) end
     if hud.keypressed(key) then return end
+    if cheats.keypressed(key) then return end -- F6: the test cheat panel
     -- G: give TP to the next player (Classic wallets, coop_wallet.lua)
     if key == wallet.GIVE_KEY and wallet.keypressed(key) then return end
     if battle.viewing then
@@ -504,7 +599,17 @@ local function drawPauseLobby()
 end
 
 local coopDraw = love.draw
+local fallbackBg = nil
 function love.draw(...)
+    -- the battle's background picture (the game sets `bg` when a battle starts) must never be
+    -- missing when a battle frame is drawn: drawState0 draws it unchecked (drawFiles.lua:56)
+    if type(player) == "table" and player.gameState == 0 and rawget(_G, "bg") == nil then
+        if not fallbackBg then
+            local okb, img = pcall(love.graphics.newImage, "sprites/bg.png")
+            fallbackBg = okb and img or nil
+        end
+        if fallbackBg then bg = fallbackBg end
+    end
     if battle.viewing then
         -- the host's battle drawn with the game's code: a missing piece must not
         -- crash the teammate's game, it shows as a message and goes in the log once
@@ -529,11 +634,15 @@ function love.draw(...)
     end
     local ok, err = pcall(hud.draw)
     if not ok then print("[mnb_coop] stats panel: " .. tostring(err)) end
+    local okc, errc = pcall(cheats.draw)
+    if not okc then print("[mnb_coop] cheat panel: " .. tostring(errc)) end
     pcall(mnbCoop.drawToasts) -- error and notice pop-ups, on top of everything
 end
 
 local coopMousepressed
 local function onMousepressed(x, y, button, ...)
+    local okc, usedc = pcall(cheats.mousepressed, x, y, button)
+    if okc and usedc then return end -- (the test cheat panel, or placing an item)
     if battle.viewing then
         if battle.menuOpen then return end -- the teammate's Esc menu takes the click (on release)
         pcall(squad.clientMousepressed, x, y, button)
@@ -553,6 +662,8 @@ end
 
 local coopMousereleased
 local function onMousereleased(x, y, button, ...)
+    local okc, usedc = pcall(cheats.mousereleased, x, y, button)
+    if okc and usedc then return end
     if battle.viewing then
         if battle.menuOpen then
             pcall(battle.menuClick, x, y)
@@ -576,6 +687,7 @@ local coopQuit = love.quit
 function love.quit(...)
     battle.stopView("quit") -- the real `player` must be back before the game saves it
     net.shutdown()
+    pcall(steam.shutdown) -- no Join Game left on a closed game
     local result
     if coopQuit then result = coopQuit(...) end -- the game saves here (co-op files if co-op campaign is on)
     pcall(campaign.onQuitAfterGameSaved)

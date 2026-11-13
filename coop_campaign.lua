@@ -235,6 +235,9 @@ function campaign.update()
     if campaign.pendingResults and not (mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing) then
         campaign.applyPendingResults()
     end
+    if #campaign.pendingCareer > 0 and not (mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing) then
+        campaign.applyPendingCareer()
+    end
     if not campaign.active then return end
     if not campaign.onSquadPage() then campaign.setPage(1) end
     -- no main menu while co-op is open: every "back to the main menu" lands on the co-op page,
@@ -955,59 +958,119 @@ function campaign.restoreVeterans(stash)
 end
 
 -- =============================================================================
--- NEW WAR (owner's rule): day, sector, career and ribbons start over; the six
--- soldiers stay with their levels. The old save is kept as a backup file. Safe
--- because the new war starts under the day 1 cap again.
--- freshStart = true: a full reset, the six soldiers are new rookies too.
+-- RESTARTS (owner, 2026-11-12: "new war, new career, new squad, and then fresh start")
+--   "war"    back to D-Day: the day, sector and map progress (a new profile), keeping the
+--            career and the six soldiers with their levels (the day 1 XP cap applies again);
+--   "career" rank, XP, skill credits, commander abilities, the career scores, ribbons and
+--            the co-op Classic rank (its save too) start over; the war and soldiers stay;
+--   "squad"  six new rookies; the war and the career stay;
+--   "fresh"  all of it.
+-- The old save is kept as a backup file first (coop/campaign/saveMNB3.lua.<kind><time>).
+-- A mission still under way in the save is abandoned first: soldiers go home as after any.
+-- The career is what the game's Career page shows (drawFiles.lua:2740) plus the Classic
+-- scores the game copies between Classic and the profile (mnb2.lua:1158-1186) and ours.
 -- =============================================================================
-function campaign.newWar(freshStart)
-    if not campaign.active then return false, "open your co-op save first" end
-    campaign.track()
-    local p = campaign.profile
-    if type(p) ~= "table" then return false, "no co-op save" end
-    if type(p.coopMission) == "table" then
-        -- a mission still under way in this save (the game was left mid-battle): it's
-        -- abandoned, everyone's soldiers go home first as after any mission. (This used to
-        -- refuse with "finish the mission first", which read as New war doing nothing.)
-        campaign.settleMission()
-        p = campaign.profile
-        if type(p) ~= "table" or type(p.coopMission) == "table" then return false, "could not close the mission under way" end
+campaign.CAREER_KEYS = {
+    "rank", "experience", "skillCredit", "skill", "ribs", "lastRib",
+    "tacticCareer", "maneuveringCareer", "fireCareer", "aggressionCareer",
+    "mnb2Rank", "mnb2Experience", "totalMNB2Game", "mnb2vcGames", "mnb2VCWave", "mnb2vcDeploy",
+    "maxWave", "avWave", "waveSum", "wings", "paraChallengeCredit", "paraFight", "mnb2LeftOverTp",
+    "mnb2lifeTimeSum", "mnb2OrdinanceDroppedTotal", "mnb2OrdinanceRecievedTotal",
+    "trenchModeXP", "trenchModeXPGain", "trenchModeStrike", "trenchSkill",
+    "coopStats",
+}
+
+local function copyKeys(from, to, keys)
+    for _, k in ipairs(keys) do
+        local v = from[k]
+        to[k] = type(v) == "table" and copyData(v, 0) or v
     end
-    campaign.normalize(p)
-    local keep = {}
-    if not freshStart then
-        for i = 1, 6 do keep[i] = p.deployedTroops[i] end
-    end
-    -- the war that ends is kept as a backup
-    local data = serialize(p)
-    if data then pcall(realFs.write, REDIRECT["saveMNB3.lua"] .. ".war" .. os.time(), data) end
+end
+
+-- a brand-new profile (the game's own newProfile), settings carried over from `old`
+local function blankProfile(old)
     local fresh = asPlayer({}, function()
         newProfile()
         return player
     end)
-    if type(fresh) ~= "table" then return false, "could not start a new war" end
-    fresh.bloop = p.bloop or 0
+    if type(fresh) ~= "table" then return nil end
+    fresh.bloop = old.bloop or 0
     local updated = asPlayer(fresh, function()
         updateProfile(player)
         return player
     end)
     if type(updated) == "table" then fresh = updated end
     fresh.coopCampaign = 1
-    copySettings(p, fresh)
+    copySettings(old, fresh)
     campaign.normalize(fresh)
-    for i = 1, 6 do
-        if type(keep[i]) == "table" then
-            untag(keep[i])
-            fresh.deployedTroops[i] = keep[i]
-        end
+    return fresh
+end
+
+-- the co-op Classic save goes aside (a fresh Classic rank next time)
+local function resetClassicSave()
+    local path = campaign.classic.DIR .. "/saveMNB2.lua"
+    local data = realFs.getInfo(path) and realFs.read(path)
+    if data then
+        pcall(realFs.write, path .. ".old" .. os.time(), data)
+        pcall(realFs.remove, path)
     end
-    fresh.gameState = 1
-    player = fresh
-    campaign.profile = fresh
+end
+
+function campaign.restart(kind)
+    if not campaign.active then return false, "open your co-op save first" end
+    campaign.track()
+    local p = campaign.profile
+    if type(p) ~= "table" then return false, "no co-op save" end
+    if type(p.coopMission) == "table" then
+        campaign.settleMission()
+        p = campaign.profile
+        if type(p) ~= "table" or type(p.coopMission) == "table" then return false, "could not close the mission under way" end
+    end
+    campaign.normalize(p)
+    local data = serialize(p)
+    if data then pcall(realFs.write, REDIRECT["saveMNB3.lua"] .. "." .. kind .. os.time(), data) end
+
+    local result = p
+    if kind == "war" or kind == "fresh" then
+        local fresh = blankProfile(p)
+        if not fresh then return false, "could not start a new war" end
+        if kind == "war" then
+            copyKeys(p, fresh, campaign.CAREER_KEYS)
+            for i = 1, 6 do
+                local s = p.deployedTroops[i]
+                if type(s) == "table" then
+                    untag(s)
+                    fresh.deployedTroops[i] = s
+                end
+            end
+        else
+            resetClassicSave()
+        end
+        result = fresh
+    elseif kind == "career" then
+        local blank = blankProfile(p)
+        if not blank then return false, "could not start a new career" end
+        copyKeys(blank, p, campaign.CAREER_KEYS)
+        resetClassicSave()
+    elseif kind == "squad" then
+        for i = 1, 6 do
+            local s = asPlayer(p, newSoldier)
+            if type(s) == "table" then p.deployedTroops[i] = s end
+        end
+    else
+        return false, "unknown restart"
+    end
+    result.gameState = 1
+    player = result
+    campaign.profile = result
     campaign.save()
-    print(freshStart and "[mnb_coop] fresh start: day 1 with six new rookies"
-        or "[mnb_coop] new war: back to day 1, the six soldiers come along")
+    print("[mnb_coop] restart: " .. kind)
     return true
+end
+
+-- (the older call: freshStart = everything, else the war)
+function campaign.newWar(freshStart)
+    return campaign.restart(freshStart and "fresh" or "war")
 end
 
 -- Control follows the slot (owner's rule): whoever stands in squad slot i belongs to
@@ -1031,9 +1094,35 @@ end
 
 -- After the game set up the mission: soldiers 7+ (later 4-player mode) stand next
 -- to soldiers 1..6 and, on D-Day, get the same perks and rifles the game gives 1..6.
+-- Also: a teammate's soldier comes with the position he had when his roster was last
+-- saved (the end of some earlier mission, or, after a game closed mid-battle, wherever he
+-- was walking), and the game's profile repair puts one with no position at x 12650, the
+-- far right (urb_engine.lua:41587). Owner, 2026-11-12: "his soldiers spawned on the far
+-- right". So a teammate's soldier who starts far from the host's own soldiers is put
+-- beside them.
 function campaign.placeExtras(dday)
     if not campaign.active then return end
     local troops = player.deployedTroops
+    if not dday then
+        local seats = (campaign.profile or player).coopSlotSeats or {}
+        local sum, n = 0, 0
+        for i = 1, 6 do
+            local t = troops[i]
+            if type(t) == "table" and (seats[i] or 1) == 1 and tonumber(t.x) then sum, n = sum + t.x, n + 1 end
+        end
+        local homeX = n > 0 and sum / n or nil
+        local k = 0
+        for i = 1, coopSquadMax() do
+            local t = troops[i]
+            if homeX and type(t) == "table" and (seats[i] or 1) ~= 1 and (not tonumber(t.x) or math.abs(t.x - homeX) > 600) then
+                k = k + 1
+                t.x = math.floor(homeX) + randNbr(80) - 40
+                t.y = 300 + ((k * 47) % 260)
+                t.targetx, t.targety = t.x, t.y
+            end
+        end
+        if k > 0 then print(string.format("[mnb_coop] %d teammate soldier(s) moved to the start, beside the host's", k)) end
+    end
     for i = 7, coopSquadMax() do
         local t, buddy = troops[i], troops[((i - 1) % 6) + 1]
         if type(t) == "table" and type(buddy) == "table" then
@@ -1128,6 +1217,147 @@ function campaign.applyPendingResults()
         print(string.format("[mnb_coop] mission results: %d soldiers back, home soldiers +%d XP", #msg.soldiers, half))
     end)
     campaign.sendRoster()
+end
+
+-- ---------------------------------------------------------------- career XP
+-- (owner, 2026-11-12: "the client does not get XP for campaign or classic") The game gives the
+-- player's own career experience at the end of a battle, on the host's machine only:
+-- campaign postMissionAdmin (player.experience += ui_xpTotal, a promotion past nextLevel,
+-- urb_engine.lua:39332), Classic postMNB2Mission (mnb2Experience += wave*50 + kills*5, the
+-- game counters, mnb2.lua:983-1001). The host sends each teammate the same gain ("career"),
+-- and their co-op profile gets it the way the game would have given it.
+-- Classic also goes into the teammate's own co-op Classic save (coop/classic/saveMNB2.lua):
+-- leaving Classic copies that save's rank over the profile's (mnb2.lua:1161).
+
+-- Host, after the game's end-of-battle bookkeeping: tell every teammate what it gave.
+function campaign.sendCareer(kind, xp, wave)
+    if net.role ~= "host" or net.playerCount() < 2 then return end
+    xp = math.floor(tonumber(xp) or 0)
+    if xp <= 0 and kind ~= "classic" then return end
+    for seat = 2, net.MAX_SEATS do
+        if net.seats[seat] then
+            net.sendTo(seat, { t = "career", kind = kind, xp = math.max(0, xp), wave = math.floor(tonumber(wave) or 0) })
+        end
+    end
+    log("career: %s +%d XP sent to the teammates", kind, xp)
+end
+
+local function promote(p, xpKey, rankKey, extra)
+    local ok, need = pcall(nextLevel, tonumber(p[rankKey]) or 0)
+    if ok and tonumber(need) and (tonumber(p[xpKey]) or 0) > need then
+        p[rankKey] = (tonumber(p[rankKey]) or 0) + 1
+        if extra then extra(p) end
+        return true
+    end
+    return false
+end
+
+-- the game's Classic end-of-game counters (mnb2.lua:992-1001)
+local function addClassicGame(p, xp, wave)
+    p.mnb2Experience = (tonumber(p.mnb2Experience) or 0) + xp
+    p.totalMNB2Game = (tonumber(p.totalMNB2Game) or 0) + 1
+    p.mnb2vcGames = (tonumber(p.mnb2vcGames) or 0) + 1
+    p.waveSum = (tonumber(p.waveSum) or 0) + wave
+    p.avWave = math.floor(p.waveSum / math.max(1, p.totalMNB2Game))
+    if wave > (tonumber(p.maxWave) or 0) then p.maxWave = wave end
+    return promote(p, "mnb2Experience", "mnb2Rank", function(q)
+        q.paraChallengeCredit = (tonumber(q.paraChallengeCredit) or 0) + 1
+    end)
+end
+
+-- Test cheats (coop_cheats.lua): career XP on profile `p`, promoted as far as it reaches.
+-- kind "campaign" (experience, rank up to 13, a skill credit each) or "classic"
+-- (mnb2Experience, command rank, a para credit each). Returns the number of promotions.
+function campaign.addCareerXp(p, kind, xp)
+    local n = 0
+    if kind == "campaign" then
+        p.experience = (tonumber(p.experience) or 0) + xp
+        while n < 20 and (tonumber(p.rank) or 0) < 13 and promote(p, "experience", "rank", function(q)
+            q.skillCredit = (tonumber(q.skillCredit) or 0) + 1
+        end) do n = n + 1 end
+    else
+        p.mnb2Experience = (tonumber(p.mnb2Experience) or 0) + xp
+        while n < 20 and promote(p, "mnb2Experience", "mnb2Rank", function(q)
+            q.paraChallengeCredit = (tonumber(q.paraChallengeCredit) or 0) + 1
+        end) do n = n + 1 end
+    end
+    return n
+end
+
+-- The same on a Classic save file (leaving Classic copies its rank over the profile's).
+-- `path` is read and written without the co-op redirect. False if there's no such save.
+function campaign.addClassicSaveXp(path, xp)
+    if not realFs.getInfo(path) then return false end
+    local okl, chunk = pcall(realFs.load, path)
+    local ok2, c = false, nil
+    if okl and type(chunk) == "function" then ok2, c = pcall(chunk) end
+    if not (ok2 and type(c) == "table") then return false end
+    campaign.addCareerXp(c, "classic", xp)
+    local data = serialize(c)
+    if data then pcall(realFs.write, path, data) end
+    return true
+end
+
+-- the real profile's save, written now (test cheats on the main menu), redirect or not
+function campaign.saveRealProfile(p)
+    local data = serialize(p)
+    if data then pcall(realFs.write, "saveMNB3.lua", data) end
+end
+
+-- Teammate: apply one "career" message to this player's co-op profile (and Classic save).
+function campaign.applyCareer(msg)
+    local xp = math.floor(tonumber(msg.xp) or 0)
+    local wave = math.floor(tonumber(msg.wave) or 0)
+    if xp < 0 or xp > 1e6 or wave < 0 or wave > 1e5 then return end
+    local promoted = false
+    if msg.kind == "campaign" then
+        if xp <= 0 then return end
+        campaign.withProfile(function(p)
+            p.experience = (tonumber(p.experience) or 0) + xp
+            if (tonumber(p.rank) or 0) < 13 then
+                promoted = promote(p, "experience", "rank", function(q)
+                    q.skillCredit = (tonumber(q.skillCredit) or 0) + 1
+                end)
+            end
+        end)
+    elseif msg.kind == "classic" then
+        campaign.withProfile(function(p) promoted = addClassicGame(p, xp, wave) end)
+        -- the co-op Classic save, so leaving Classic later doesn't copy an older rank back
+        local path = campaign.classic.DIR .. "/saveMNB2.lua"
+        if realFs.getInfo(path) then
+            local okl, chunk = pcall(realFs.load, path)
+            local ok2, c = false, nil
+            if okl and type(chunk) == "function" then ok2, c = pcall(chunk) end
+            if ok2 and type(c) == "table" then
+                addClassicGame(c, xp, wave)
+                local data = serialize(c)
+                if data then pcall(realFs.write, path, data) end
+            end
+        end
+    else
+        return
+    end
+    local text = string.format("Career: +%d XP%s", xp, promoted and ", promoted!" or "")
+    if mnbCoop and mnbCoop.notice then pcall(mnbCoop.notice, text) end
+    print("[mnb_coop] " .. text .. " (" .. tostring(msg.kind) .. ")")
+end
+
+-- Teammate: "career" from the host, kept until this machine is back from the battle view
+-- (its `player` is the host's mirror until then).
+campaign.pendingCareer = {}
+function campaign.queueCareer(msg)
+    if #campaign.pendingCareer >= 8 then return end
+    campaign.pendingCareer[#campaign.pendingCareer + 1] = msg
+    if not (mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing) then campaign.applyPendingCareer() end
+end
+
+function campaign.applyPendingCareer()
+    local list = campaign.pendingCareer
+    campaign.pendingCareer = {}
+    for _, msg in ipairs(list) do
+        local ok, err = pcall(campaign.applyCareer, msg)
+        if not ok then print("[mnb_coop] career: " .. tostring(err)) end
+    end
 end
 
 -- ---------------------------------------------------------------- squad screen

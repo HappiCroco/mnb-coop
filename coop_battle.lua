@@ -570,7 +570,10 @@ local function applyImageGlobals(list)
                 end
             end
             if img then
-                if C.savedGlobals[name] == nil then C.savedGlobals[name] = { v = rawget(_G, name) } end
+                -- this machine's own picture comes back when the view ends; if it had none (it
+                -- never played a battle itself), the host's stays: an empty `bg` crashed the next
+                -- battle drawn here (drawFiles.lua:56, owner 2026-11-12)
+                if C.savedGlobals[name] == nil and rawget(_G, name) ~= nil then C.savedGlobals[name] = { v = rawget(_G, name) } end
                 _G[name] = img
             end
         end
@@ -815,6 +818,7 @@ local function hostTick()
     H.sentAt[H.seq % SENT_KEEP] = { n = H.seq, t = love.timer.getTime() }
     local msg = capture(H.st)
     msg.t, msg.n = "snap", H.seq
+    msg.ht = love.timer.getTime() -- host clock: teammates play the updates back on this schedule
     msg.img = imageGlobals(H.imgSent, false)
     msg.view = viewState()
     if player.gameState ~= 0 then msg.g = debriefGlobals(H.gSent, false) end -- only the mission-end pages need them
@@ -1041,7 +1045,8 @@ local function startView(msg)
     m.gameState = 0
     player = m
     C.lists, C.interp = {}, setmetatable({}, { __mode = "k" })
-    C.lastAt, C.interval, C.avgGap, C.peakGap = love.timer.getTime(), 0.05, nil, nil
+    C.lastAt, C.interval = love.timer.getTime(), 0.05
+    C.queue, C.offset, C.spread, C.sendGap, C.lastHt, C.creptAt = {}, nil, nil, nil, nil, nil -- (playout buffer)
     C.viewStartAt = love.timer.getTime() -- the "WATCHING" banner fades from here (option watchBanner)
     C.hostName = type(msg.host) == "string" and msg.host or "Host"
     applySnap(msg)
@@ -1102,20 +1107,10 @@ function battle.onHostMessage(msg)
         startView(msg)
     elseif msg.t == "snap" then
         if not C then return end
-        local now = love.timer.getTime()
-        local gap = now - C.lastAt
-        C.lastAt = now
-        -- How long one move is smoothed over. Over a long connection updates come in clumps
-        -- (several at once, then a gap); smoothing over the AVERAGE gap made soldiers dash
-        -- and stall (owner, 2026-11-12: jitter at 60/s, 172 ms). So it is the longest recent
-        -- gap (halving every second), never less than the average: a move is still under way
-        -- when the next clump lands.
-        C.avgGap = (C.avgGap or gap) * 0.8 + gap * 0.2
-        C.peakGap = math.max(gap, (C.peakGap or gap) * 0.5 ^ math.min(gap, 1))
-        C.interval = math.max(0.03, math.min(0.25, math.max(C.avgGap, C.peakGap)))
-        applySnap(msg)
         if type(msg.n) == "number" then C.lastN = msg.n end -- reported back: the automatic rate
+        battle.queueSnap(msg)
     elseif msg.t == "bend" then
+        battle.playSnaps(true) -- what's still waiting comes first (the mission-end page, say)
         if battle.inDebrief() then
             -- the host left the mission report: this teammate keeps their own copy, as it
             -- stands, until they press Back themselves (owner, 2026-11-12)
@@ -1193,6 +1188,67 @@ local function safeCall(fn, dt)
     end
 end
 
+-- ---------------------------------------------------------------- playout buffer
+-- (owner, 2026-11-12: Herb's recording of our co-op game showed the slight jitter) Updates
+-- cross the internet unevenly: a few close together, then a gap. Applied the moment they
+-- arrived, every gap was a small stall. Now each update carries the host's clock (`ht`) and
+-- is applied on the host's own schedule, a short moment behind it:
+--     play at = ht + offset + delay
+--   offset: the shortest trip seen (arrival - ht); it creeps up slowly so a route that got
+--           longer is followed;
+--   delay:  room for the unevenness: 2.5 send intervals + 2.5x the recent spread of trip
+--           times (40 to 350 ms; at 30/s about 83 ms, at 60/s about 42 ms on a steady line).
+-- Each update is smoothed over the time until the next one plays, so movement is even. An
+-- update that comes too late plays at once (and the spread grows, so the delay does too).
+-- (the floor was 80 ms; at 60 updates/s that wasted half the gain: owner, 2026-11-12, "it adds a
+-- delay to the orders". 40 ms lets a fast host rate shrink the delay; it still grows by itself
+-- with the spread when the line gets uneven.)
+local PLAY_MIN, PLAY_MAX = 0.04, 0.35
+
+function battle.queueSnap(msg)
+    local now = love.timer.getTime()
+    local ht = tonumber(msg.ht)
+    if not ht then -- (a host without the clock: as before, at once)
+        C.interval = 0.05
+        applySnap(msg)
+        return
+    end
+    local trip = now - ht
+    if not C.offset or trip < C.offset then C.offset = trip end
+    C.spread = (C.spread or 0) * 0.95 + math.abs(trip - C.offset) * 0.05
+    if C.lastHt then
+        local gap = ht - C.lastHt
+        if gap > 0 and gap < 1 then C.sendGap = (C.sendGap or gap) * 0.9 + gap * 0.1 end
+    end
+    C.lastHt = ht
+    local delay = math.max(PLAY_MIN, math.min(PLAY_MAX, 2.5 * (C.sendGap or 0.033) + 2.5 * C.spread))
+    C.playDelay = delay
+    C.queue = C.queue or {}
+    C.queue[#C.queue + 1] = { at = ht + C.offset + delay, ht = ht, msg = msg }
+end
+
+-- for the stats panel: how far behind the host this screen plays (ms), or nil
+function battle.bufferMs()
+    return C and C.playDelay and math.floor(C.playDelay * 1000 + 0.5) or nil
+end
+
+-- Every frame (and before the battle ends): apply the updates whose time has come.
+-- all = true: everything waiting, now.
+function battle.playSnaps(all)
+    if not C or not C.queue then return end
+    local now = love.timer.getTime()
+    if C.offset then C.offset = C.offset + 0.002 * (now - (C.creptAt or now)) end -- (follow a slower route)
+    C.creptAt = now
+    while C.queue[1] and (all or C.queue[1].at <= now) do
+        local e = table.remove(C.queue, 1)
+        -- smooth this one over the time until the next one is due
+        local nextE = C.queue[1]
+        local span = nextE and (nextE.ht - e.ht) or (C.sendGap or 0.05)
+        C.interval = math.max(0.016, math.min(0.25, span))
+        applySnap(e.msg)
+    end
+end
+
 -- Client: replaces the game's update while watching.
 -- client: on the host's mission-end page rather than in the battle
 function battle.inDebrief()
@@ -1216,6 +1272,8 @@ function battle.startBackground()
 end
 
 function battle.clientUpdate(dt)
+    if not C then return end
+    battle.playSnaps() -- the updates whose time has come (playout buffer)
     if not C then return end
     if battle.inDebrief() then
         player.screenx, player.screeny = 0, 0 -- its timers and fades come from the host

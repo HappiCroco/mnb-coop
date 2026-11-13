@@ -26,7 +26,7 @@ local function noteMods(diffs, who)
     end
 end
 
-net.VERSION = "1.1.2" -- co-op protocol; must match on both sides
+net.VERSION = "1.2.0" -- co-op protocol; must match on both sides
 net.DEFAULT_PORT = 47913
 -- enet peer timeout (ms): give up on a peer after `min` once its unanswered packets have
 -- been resent the limit, and after `max` in any case. Was 3000/8000 (a crashed game noticed
@@ -44,8 +44,10 @@ net.seats = {} -- [seat] = { name, steamId, show, face, ready, ping, avatar (Ima
 net.port = net.DEFAULT_PORT
 
 local enet = nil
-local host = nil        -- enet host
+local host = nil        -- enet host (a client joining over Steam: the Steam transport)
+local shost = nil       -- host: the Steam transport, next to the enet host (coop_steam.lua)
 local server = nil      -- client: the peer we connected to
+net.steam = nil         -- coop_steam (set by mnb_coop_main): connections over Steam's relays
 local peerSeat = {}     -- host: peer -> seat
 local seatPeer = {}     -- host: seat -> peer
 local avatarBytes = {}  -- host: seat -> png bytes, to forward to late joiners
@@ -105,10 +107,13 @@ local statWindow = { at = 0, up = 0, down = 0, msgsOut = 0, msgsIn = 0 }
 
 local function countIn() statWindow.msgsIn = statWindow.msgsIn + 1 end
 
-local function updateStats(h)
+local function updateStats(...)
     local now = love.timer.getTime()
     local s = net.stats
-    s.totalUp, s.totalDown = h:total_sent_data(), h:total_received_data()
+    s.totalUp, s.totalDown = 0, 0
+    for _, h in pairs({ ... }) do
+        s.totalUp, s.totalDown = s.totalUp + h:total_sent_data(), s.totalDown + h:total_received_data()
+    end
     local dt = now - statWindow.at
     if dt >= 1 then
         s.upRate = (s.totalUp - statWindow.up) / dt
@@ -127,6 +132,10 @@ function net.pings()
         for seat, peer in pairs(seatPeer) do out[seat] = { avg = peer:round_trip_time(), last = peer:last_round_trip_time() } end
     elseif server and net.role == "client" then
         out[1] = { avg = server:round_trip_time(), last = server:last_round_trip_time() }
+    end
+    local sim = net.simLag() -- (a simulated ping counts, testing)
+    if sim > 0 then
+        for _, p in pairs(out) do p.avg, p.last = p.avg + sim, p.last + sim end
     end
     return out
 end
@@ -219,6 +228,7 @@ end
 -- Send what's queued now instead of at the next frame's service call.
 function net.flush()
     if host then pcall(host.flush, host) end
+    if shost then pcall(shost.flush, shost) end
 end
 
 -- Client: an order or a roster for the host (coop_squad.lua, coop_campaign.lua).
@@ -528,13 +538,17 @@ end
 
 -- ---------------------------------------------------------------- public
 local function reset(status)
-    if host then
+    if host or shost then
         for _, peer in pairs(seatPeer) do pcall(peer.disconnect_now, peer) end
         if server then pcall(server.disconnect_now, server) end
-        pcall(host.flush, host)
-        pcall(host.destroy, host)
+        if host then
+            pcall(host.flush, host)
+            pcall(host.destroy, host)
+        end
+        if shost then pcall(shost.destroy, shost) end
     end
-    host, server = nil, nil
+    host, shost, server = nil, nil, nil
+    net.viaSteam = false
     peerSeat, seatPeer, avatarBytes, avatarImages = {}, {}, {}, {}
     guard, kickedIds, myJoinCode = {}, {}, nil
     statWindow = { at = love.timer.getTime(), up = 0, down = 0, msgsOut = 0, msgsIn = 0 }
@@ -554,14 +568,23 @@ end
 -- requireCode: joiners must give the join code (shared inside the copied address).
 function net.hostGame(port, requireCode)
     reset()
-    if not loadEnet() then return false end
     net.port = tonumber(port) or net.DEFAULT_PORT
-    local ok, h = pcall(enet.host_create, "*:" .. net.port, GUARD.MAX_PEERS, 2)
-    if not ok or not h then
+    -- two ways in: Steam (friends join through Steam's relays, no address needed) and the
+    -- UDP port (same house, or a playit.gg tunnel). Either one is enough.
+    local okS, s = pcall(function() return net.steam and net.steam.newTransport("host") end)
+    shost = okS and s or nil
+    local portOk = false
+    if loadEnet() then
+        local ok, h = pcall(enet.host_create, "*:" .. net.port, GUARD.MAX_PEERS, 2)
+        if ok and h then
+            host = h
+            portOk = true
+        end
+    end
+    if not host and not shost then
         net.status = "Could not open port " .. net.port .. " (already in use?)"
         return false
     end
-    host = h
     net.role, net.mySeat = "host", 1
     net.seats[1] = myCard()
     local bytes = profile.avatarBytes()
@@ -570,8 +593,16 @@ function net.hostGame(port, requireCode)
         setAvatar(1, bytes)
     end
     if requireCode ~= false then net.newJoinCode() end
-    net.status = "Hosting on UDP port " .. net.port
+    net.status = (shost and "Hosting through Steam" or "Hosting") ..
+        (portOk and (shost and " and on UDP port " or " on UDP port ") .. net.port or "")
     return true
+end
+
+-- Host: the address that reaches this lobby through Steam ("steam:<my id>"), or nil.
+function net.steamAddress()
+    if not shost or not net.steam then return nil end
+    local id = net.steam.mySteamId()
+    return id and ("steam:" .. id) or nil
 end
 
 -- "1.2.3.4", "1.2.3.4:5000" or "name.playit.gg:5000", optionally followed by "#CODE".
@@ -605,6 +636,38 @@ function net.kick(seat)
 end
 
 function net.join(text)
+    -- "steam:<host's Steam id>#CODE": through Steam's relays (coop_steam.lua)
+    local sid, scode = tostring(text or ""):match("^%s*steam:(%d+)#?(%w*)%s*$")
+    if sid then
+        if not (net.steam and net.steam.ok and net.steam.p2p) then
+            net.status = "Steam connections aren't available here (is Steam running?)"
+            return false
+        end
+        if not net.steam.validId(sid) then
+            net.status = "That Steam address isn't right"
+            return false
+        end
+        if sid == net.steam.mySteamId() then
+            -- two copies on one PC share one Steam account, and Steam can't connect an account to itself
+            net.status = "That's your own Steam address: on one PC, join 127.0.0.1 instead"
+            return false
+        end
+        reset()
+        myJoinCode = scode ~= "" and scode:upper() or nil
+        net.samePC = false
+        local T = net.steam.newTransport("client")
+        if not T then
+            reset("Could not start Steam networking")
+            return false
+        end
+        host = T
+        server = T:connect(sid)
+        net.viaSteam = true
+        net.role = "connecting"
+        net.status = "Connecting through Steam..."
+        net.connectStarted = love.timer.getTime()
+        return true
+    end
     local addr, port, code = net.parseAddress(text)
     if not addr then
         net.status = "Type an address, like 192.168.0.10 or name.playit.gg:12345"
@@ -753,14 +816,85 @@ function net.readyToStart()
     return false
 end
 
+local serviceAll -- (below)
+
+-- ---------------------------------------------------------------- simulated ping (testing)
+-- (owner, 2026-11-12: "a ping simulator, so if I'm testing with myself it simulates what the
+-- other person is having") Option simLag = a round trip in ms. Everything this machine
+-- receives is held back by half of it (the other copy holds back the other half), plus a
+-- little jitter, plus now and then a stall the length of a whole round trip (what a lost
+-- packet costs on a reliable line). Order is kept, so held messages arrive in a bunch, as
+-- they do over a real long line. Pings shown and used by the automatic rate include it.
+local simQ = setmetatable({}, { __mode = "k" })    -- transport -> { { t, ev }, ... }
+local simLast = setmetatable({}, { __mode = "k" }) -- transport -> release time of the last held one
+
+function net.simLag()
+    local v = tonumber(net.option("simLag", 0)) or 0
+    return math.max(0, math.min(2000, v))
+end
+
+-- the next event from a transport (pcall-style: ok, event or nil)
+local function pull(h)
+    local lag = net.simLag()
+    local q = simQ[h]
+    if lag <= 0 and not (q and #q > 0) then return pcall(h.service, h, 0) end
+    if not q then
+        q = {}
+        simQ[h] = q
+    end
+    local now = love.timer.getTime()
+    if lag > 0 then
+        for _ = 1, 64 do
+            local ok, ev = pcall(h.service, h, 0)
+            if not ok then return ok, ev end
+            if not ev then break end
+            local d = lag / 2000 + love.math.random() * lag * 0.15 / 1000
+            if love.math.random() < 0.004 then d = d + lag / 1000 end -- a lost packet, resent
+            local t = math.max(simLast[h] or 0, now + d)
+            simLast[h] = t
+            q[#q + 1] = { t = t, ev = ev }
+        end
+    end
+    if q[1] and q[1].t <= now then return true, table.remove(q, 1).ev end
+    return true, nil
+end
+
 -- Called every frame from love.update.
 function net.update()
-    if not host then return end
+    if not host and not shost then return end
+    if (shost or net.viaSteam) and net.steam then net.steam.runCallbacks() end -- (Steam's session requests)
+    for _, h in ipairs({ host or false, shost or false }) do
+        if h and not serviceAll(h) then return end -- (false: the session was reset)
+    end
+    if host or shost then updateStats(host, shost) end
+    if net.role == "connecting" and net.connectStarted and love.timer.getTime() - net.connectStarted > (net.viaSteam and 15 or 10) then
+        reset(net.viaSteam and "No answer from the host through Steam (is their lobby open?)"
+            or "No answer from the host (wrong address, or the port is not reachable)")
+        return
+    end
+    if net.role == "host" then
+        local now = love.timer.getTime()
+        -- connections that never proved they're players
+        for peer, g in pairs(guard) do
+            if not peerSeat[peer] and now - g.joinedAt > GUARD.HELLO_TIMEOUT then drop(peer, "no hello in time") end
+        end
+        if now - lastLobbySent > 1 then
+            for seat, peer in pairs(seatPeer) do
+                if net.seats[seat] then net.seats[seat].ping = peer:round_trip_time() + net.simLag() end
+            end
+            broadcast({ t = "lobby", seats = lobbyView(), stage = net.stage })
+            lastLobbySent = now
+        end
+    end
+end
+
+-- One transport's events (the enet host, or the Steam one). False if the session was reset.
+function serviceAll(h)
     for _ = 1, 64 do
-        local ok, ev = pcall(host.service, host, 0)
+        local ok, ev = pull(h)
         if not ok then
             reset("Network error: " .. tostring(ev))
-            return
+            return false
         end
         if not ev then break end
         if ev.type == "connect" then
@@ -811,29 +945,11 @@ function net.update()
                 local why = net.status:find("^Refused") and net.status or
                     (net.role == "connecting" and "Could not reach the host" or "Disconnected from the host")
                 reset(why)
-                return
+                return false
             end
         end
     end
-    if host then updateStats(host) end
-    if net.role == "connecting" and net.connectStarted and love.timer.getTime() - net.connectStarted > 10 then
-        reset("No answer from the host (wrong address, or the port is not reachable)")
-        return
-    end
-    if net.role == "host" then
-        local now = love.timer.getTime()
-        -- connections that never proved they're players
-        for peer, g in pairs(guard) do
-            if not peerSeat[peer] and now - g.joinedAt > GUARD.HELLO_TIMEOUT then drop(peer, "no hello in time") end
-        end
-        if now - lastLobbySent > 1 then
-            for seat, peer in pairs(seatPeer) do
-                if net.seats[seat] then net.seats[seat].ping = peer:round_trip_time() end
-            end
-            broadcast({ t = "lobby", seats = lobbyView(), stage = net.stage })
-            lastLobbySent = now
-        end
-    end
+    return true
 end
 
 function net.shutdown()

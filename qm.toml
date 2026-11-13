@@ -1,6 +1,6 @@
 # Mud and Blood Co-op. Standalone; QuarterMaster 1.8's menu (or the old GMenu) gives it an options page and page numbers.
 [manifest]
-version = "1.1.2"
+version = "1.2.0"
 priority = 80
 
 # For QuarterMaster's mod list (Mods > Browse); the game ignores it.
@@ -45,6 +45,18 @@ name = "includes/mods/mnb_coop/coop_battle"
 source = "coop_wallet.lua"
 before = "main.lua"
 name = "includes/mods/mnb_coop/coop_wallet"
+
+[[patches]]
+[patches.module]
+source = "coop_cheats.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_cheats"
+
+[[patches]]
+[patches.module]
+source = "coop_steam.lua"
+before = "main.lua"
+name = "includes/mods/mnb_coop/coop_steam"
 
 [[patches]]
 [patches.module]

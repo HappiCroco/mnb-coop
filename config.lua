@@ -20,6 +20,13 @@ return {
             description = "Hosted lobbies get a code that rides along in COPY ADDRESS. Strangers who find your address can't get in without it.",
         },
         {
+            id = "steamJoin",
+            label = "Steam invites and Join Game",
+            type = "checkbox",
+            default = true,
+            description = "Hosting shows Join Game on you in your friends' Steam friends list, and the lobby gets an INVITE (STEAM) link. Accepting joins the lobby, even when the game was closed. Takes effect when the game starts.",
+        },
+        {
             id = "syncRate",
             label = "Battle updates per second (host)",
             type = "cycle",
@@ -64,6 +71,22 @@ return {
             type = "checkbox",
             default = false,
             description = "While connected: ping, upload/download per second and totals, top right. Ctrl+F8 toggles it too.",
+        },
+        {
+            id = "testCheats",
+            label = "Test: cheats (F6)",
+            type = "checkbox",
+            default = false,
+            description = "F6 opens a cheat panel for testing. On the main menu it changes your own profile (career and Classic XP, skill credits, squad XP), in the co-op screens your co-op profile, and in a battle you play or host the battle (TP for everyone, heal, XP, abilities ready, grenades and other items at the next click, next wave).",
+        },
+        {
+            id = "simLag",
+            label = "Test: simulated ping",
+            type = "cycle",
+            default = 0,
+            options = { 0, 100, 200, 300, 500 },
+            labels = { "Off", "100 ms", "200 ms", "300 ms", "500 ms" },
+            description = "For testing two copies on one PC: everything this copy receives is held back as if the other player were far away (half the ping on each copy, a little jitter, and now and then a stall like a lost packet). Set it in both copies. Off for real games.",
         },
         {
             id = "debug",

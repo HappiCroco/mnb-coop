@@ -114,6 +114,9 @@ end
 local function baseAddress()
     local s = profile.settings.shareAddress or ""
     if s ~= "" then return s end
+    -- hosting through Steam: "steam:<id>" reaches us from anywhere, no tunnel needed
+    local sa = net.steamAddress and net.steamAddress()
+    if sa then return sa end
     return (lobby.lanIp or "127.0.0.1") .. ":" .. port()
 end
 
@@ -121,6 +124,15 @@ end
 local function shareAddress()
     return baseAddress() .. (net.joinCode and ("#" .. net.joinCode) or "")
 end
+lobby.shareAddress = shareAddress
+-- What Steam's Join Game and invites carry (coop_steam.lua): the Steam address when we host
+-- through Steam (works from anywhere), else the address friends would type.
+function lobby.inviteAddress()
+    local sa = net.steamAddress and net.steamAddress()
+    if sa then return sa .. (net.joinCode and ("#" .. net.joinCode) or "") end
+    return shareAddress()
+end
+lobby.steam = nil -- coop_steam, set by mnb_coop_main
 
 local function requireCode()
     return net.isOn("joinCode", true)
@@ -207,6 +219,18 @@ end
 
 -- Every frame: teammates follow the host's ready room in and out; a host who lost the lobby leaves it.
 function lobby.updateRoom()
+    -- Back on the mod options opened from CO-OP OPTIONS: to the lobby, not the main menu
+    -- (owner, 2026-11-12)
+    if lobby.optionsFrom then
+        local menu = modMenu()
+        if menuPage == 1 then
+            menuPage = lobby.optionsFrom
+            mouseOverText = ""
+            lobby.optionsFrom = nil
+        elseif not (menu and menuPage == menu.PAGE_MOD_OPTIONS) then
+            lobby.optionsFrom = nil
+        end
+    end
     local room = lobby.getRoomPage()
     local battle = mnbCoop and mnbCoop.battle
     if battle and battle.viewing then return end -- the battle has begun (or a report is still open)
@@ -261,7 +285,11 @@ local function links()
             or { "coopLocal", "USE LOCAL ADDRESS", "Go back to your home-network address " .. (lobby.lanIp or "") },
             net.joinCode and { "coopNewCode", "NEW CODE", "Make a new join code. Players already in stay;\nanyone with the old address can't join any more." }
             or { "coopNothing", "", "" },
-            { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
+            (lobby.steam and lobby.steam.ok)
+            and { "coopInvite", "INVITE (STEAM)", "Steam's invite window: friends who accept join this lobby.\n" ..
+                "Your friends also see Join Game on you in their Steam friends list.\n" ..
+                "Through Steam: no address, no port, no playit.gg." }
+            or { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
             ",\npaste its address above, then COPY ADDRESS and send it to your teammates." },
             { "coopLeave", "CLOSE LOBBY", "Close the lobby; everyone is disconnected" },
         }
@@ -276,8 +304,9 @@ local function links()
         { "coopHost", "HOST A LOBBY", "Open a lobby on UDP port " .. port() .. ". Up to " .. net.MAX_SEATS .. " players." },
         { "coopPaste", "PASTE ADDRESS", "Paste the host's address from the clipboard (Ctrl+V)" },
         { "coopClear", "CLEAR",         "Empty the address box" },
-        { "coopHelp", "HOW TO JOIN?", "Same house: the host's local address (like 192.168.0.10:47913).\n" ..
-        "Online: the host's playit.gg address (like name.playit.gg:12345)." },
+        { "coopHelp", "HOW TO JOIN?", "Easiest: accept the host's Steam invite, or Join Game on them in your Steam friends list.\n" ..
+        "Or paste the address the host copied: steam:<numbers>#CODE works from anywhere;\n" ..
+        "192.168.0.10:47913 in the same house; a playit.gg address also still works." },
     }
 end
 
@@ -331,12 +360,12 @@ function lobby.registerButtons()
             and "Brief and start the next mission, for everyone in the lobby"
             or "The host starts the missions. You'll be pulled in when the battle begins.")
         addButton(32, 686, 80, 30, "coopHubBack", "Back to the Multiplayer screen")
-        addButton(1060, 686, 170, 30, "coopHubNewWar", lobby.newWarArmed()
-            and "Click again to start a NEW WAR now"
-            or "Start the war over at D-Day: day, sector, career and ribbons reset.\nYour six soldiers come along with their levels. The old war is kept as a backup.")
-        addButton(860, 686, 170, 30, "coopHubFreshStart", lobby.freshArmed()
-            and "Click again to start over with NEW ROOKIES now"
-            or "Full reset: like New war, but your six soldiers are replaced by new rookies.\nThe old war is kept as a backup.")
+        local at = lobby.RESTART_AT
+        for i, r in ipairs(lobby.RESTARTS) do
+            addButton(at.x0 + (i - 1) * at.w, at.y, at.w - 10, 30, "coopRestart_" .. r.kind,
+                lobby.restartArmed(r.kind) and ("Click again: " .. r.label:upper() .. " now")
+                or (r.tip .. "\nThe old save is kept as a backup."))
+        end
         return
     end
     if menuPage == lobby.getRoomPage() then
@@ -474,6 +503,13 @@ end
 
 function coopHelpButton() end
 
+function coopInviteButton()
+    click()
+    local ok, why = false, "Steam isn't available"
+    if lobby.steam then ok, why = lobby.steam.openInvite(lobby.inviteAddress()) end
+    if not ok then flash("Steam invite: " .. tostring(why)) end
+end
+
 local function seatClick(i)
     if net.role == "host" and not isMe(i) and net.seats[i] then
         -- removing a player takes two clicks within 3 seconds
@@ -552,52 +588,44 @@ function coopHubBackButton()
     menuPage = lobby.getPage() -- the Multiplayer screen; Back there leaves co-op
 end
 
--- New war needs two clicks within 3 seconds
-lobby.newWarAt = nil
-function lobby.newWarArmed()
-    return lobby.newWarAt ~= nil and love.timer.getTime() - lobby.newWarAt < 3
+-- The four restarts (campaign.restart), on the co-op page's header line: high on the screen,
+-- so their tooltips have room below (owner, 2026-11-12: on the bottom bar they ran off the
+-- screen). Each needs two clicks within 3 seconds.
+lobby.RESTARTS = {
+    { kind = "war", label = "New war", done = "New war: back to D-Day, your career and soldiers came along",
+        tip = "Back to D-Day: the day, sector and map start over.\nYour career, ribbons and soldiers stay." },
+    { kind = "career", label = "New career", done = "New career: rank, abilities and ribbons start over",
+        tip = "Your rank, XP, commander abilities, ribbons and co-op Classic rank start over.\nThe war and your soldiers stay." },
+    { kind = "squad", label = "New squad", done = "New squad: six new rookies",
+        tip = "Six new rookies replace your soldiers.\nThe war and your career stay." },
+    { kind = "fresh", label = "Fresh start", done = "Fresh start: everything starts over",
+        tip = "Everything starts over: the war, your career, your Classic rank and your soldiers." },
+}
+lobby.RESTART_AT = { x0 = 590, y = 128, w = 160 } -- (each label is w - 10 wide)
+lobby.restartKind, lobby.restartAt = nil, 0
+
+function lobby.restartArmed(kind)
+    return lobby.restartKind == kind and love.timer.getTime() - lobby.restartAt < 3
 end
 
-function coopHubNewWarButton()
+local function restartClick(r)
     click()
-    if not lobby.newWarArmed() then
-        lobby.newWarAt = love.timer.getTime()
+    if not lobby.restartArmed(r.kind) then
+        lobby.restartKind, lobby.restartAt = r.kind, love.timer.getTime()
         return
     end
-    lobby.newWarAt = nil
-    local ok, why = campaign.newWar()
-    if ok then
-        menuPage = lobby.getHubPage()
-        if mnbCoop and mnbCoop.notice then mnbCoop.notice("New war: day 1, your soldiers came along") end
-    elseif mnbCoop and mnbCoop.notice then
-        mnbCoop.notice("New war: " .. tostring(why))
-    end
+    lobby.restartKind = nil
+    local ok, why = campaign.restart(r.kind)
+    if mnbCoop and mnbCoop.notice then mnbCoop.notice(ok and r.done or (r.label .. ": " .. tostring(why))) end
+    if ok then menuPage = lobby.getHubPage() end
     mouseOverText = ""
 end
-
--- Fresh start (full reset: new rookies too), also two clicks within 3 seconds
-lobby.freshAt = nil
-function lobby.freshArmed()
-    return lobby.freshAt ~= nil and love.timer.getTime() - lobby.freshAt < 3
+for _, r in ipairs(lobby.RESTARTS) do
+    _G["coopRestart_" .. r.kind .. "Button"] = function() restartClick(r) end
 end
-
-function coopHubFreshStartButton()
-    click()
-    if not lobby.freshArmed() then
-        lobby.freshAt = love.timer.getTime()
-        lobby.newWarAt = nil
-        return
-    end
-    lobby.freshAt = nil
-    local ok, why = campaign.newWar(true)
-    if ok then
-        menuPage = lobby.getHubPage()
-        if mnbCoop and mnbCoop.notice then mnbCoop.notice("Fresh start: day 1 with six new rookies") end
-    elseif mnbCoop and mnbCoop.notice then
-        mnbCoop.notice("Fresh start: " .. tostring(why))
-    end
-    mouseOverText = ""
-end
+-- (older names)
+function coopHubNewWarButton() restartClick(lobby.RESTARTS[1]) end
+function coopHubFreshStartButton() restartClick(lobby.RESTARTS[4]) end
 
 -- Co-op Classic (coop_defense.lua): the game's Classic, with the defense layout
 function coopClassicButton()
@@ -635,6 +663,9 @@ function coopOptionsButton()
             return
         end
         menuPage = menu.PAGE_MOD_OPTIONS
+        -- its Back goes to the main menu: from here it comes back to the lobby (lobby.updateRoom)
+        lobby.optionsFrom = lobby.getPage()
+        lobby.returnPage = lobby.getPage() -- (with the co-op save open, campaign.update asks this)
         mouseOverText = ""
     else
         net.status = "Update QuarterMaster (1.8 or newer) to change co-op options"
@@ -951,12 +982,14 @@ local function drawHub()
         end
     end
     outlined("Back", 50, 685, 100, "left", bigFont, hovered(32, 686, 80, 30) and RED or LIGHT)
-    local armed = lobby.newWarArmed()
-    outlined(armed and "Sure? Click again" or "New war", 1060, 685, 170, "right", bigFont,
-        (armed or hovered(1060, 686, 170, 30)) and RED or DIM)
-    local freshArmed = lobby.freshArmed()
-    outlined(freshArmed and "Sure? Click again" or "Fresh start", 860, 685, 170, "right", bigFont,
-        (freshArmed or hovered(860, 686, 170, 30)) and RED or DIM)
+    -- the restarts, on the header line
+    local at = lobby.RESTART_AT
+    for i, r in ipairs(lobby.RESTARTS) do
+        local bx = at.x0 + (i - 1) * at.w
+        local armed = lobby.restartArmed(r.kind)
+        outlined(armed and "Sure? Click again" or r.label, bx, at.y + 2, at.w - 10, "right", bigFont,
+            (armed or hovered(bx, at.y, at.w - 10, 30)) and RED or DIM)
+    end
     love.graphics.setColor(1, 1, 1, 1)
 end
 

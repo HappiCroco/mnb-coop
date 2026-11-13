@@ -79,7 +79,8 @@ function hud.draw()
             rows[#rows + 1] = { string.format("Rate %d/s%s, behind %.2f s%s", battle.currentRate(), auto and " (auto)" or "",
                 lag, who and (" (" .. who .. ")") or ""), lag > 0.5 and 0.95 or 0.75, lag > 0.5 and 0.6 or 0.85, lag > 0.5 and 0.4 or 1 }
         else
-            rows[#rows + 1] = { "Battle: watching", 0.75, 0.85, 1 }
+            local buf = battle.bufferMs and battle.bufferMs()
+            rows[#rows + 1] = { "Battle: watching" .. (buf and (", smoothing buffer " .. buf .. " ms") or ""), 0.75, 0.85, 1 }
         end
     end
     if net.role == "host" and (net.blocked or 0) > 0 then
