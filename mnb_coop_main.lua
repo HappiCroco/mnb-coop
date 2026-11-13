@@ -29,13 +29,16 @@ local steam = require("includes/mods/mnb_coop/coop_steam")
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
     squad = squad, defense = defense, ribbons = ribbons, wallet = wallet, steam = steam, version = net.VERSION }
 
--- Steam's Join Game and invites (coop_steam.lua): the game started Steam already (main.lua:29)
-do
+-- Steam's Join Game, invites and connections (coop_steam.lua). The game starts Steam in
+-- love.load (main.lua:29), which runs after this file: so ours starts on the first frame.
+lobby.steam = steam
+net.steam = steam -- hosting and joining through Steam's relays ("steam:<id>")
+local steamTried = false
+local function startSteam()
+    steamTried = true
     local ok, err = pcall(steam.init)
     if not ok then print("[mnb_coop] steam: " .. tostring(err)) end
     if not steam.ok then print("[mnb_coop] steam join off: " .. tostring(steam.why)) end
-    lobby.steam = steam
-    net.steam = steam -- hosting and joining through Steam's relays ("steam:<id>")
 end
 
 -- A Steam join (invite accepted, Join Game, or the game started by Steam for one): taken
@@ -247,6 +250,7 @@ local coopUpdate = love.update
 function love.update(dt, ...)
     net.update()
     pcall(lobby.updateRoom) -- teammates follow the host into and out of the ready room
+    if not steamTried then startSteam() end
     if steam.ok then
         -- Join Game on the host while a seat is free; a join that came in, once the menus can take it
         local okst, errst = pcall(steam.update, net.role == "host" and lobby.inviteAddress() or nil,
