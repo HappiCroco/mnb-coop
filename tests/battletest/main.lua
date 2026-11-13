@@ -300,6 +300,8 @@ do
   love.timer.getTime = function() return tt end
   local c = T.getClient()
   c.queue, c.offset, c.spread, c.sendGap, c.lastHt = {}, nil, nil, nil, nil
+  c.pclock, c.lastPlayed, c.playedAt, c.behind = nil, nil, nil, nil
+  c.minA, c.minB, c.winAt = nil, nil, nil
   local hostClock = 100
   local function snapAt(ht, x)
     player = hostP
@@ -331,6 +333,35 @@ do
   check(steps >= 3 and #c.queue == 0, "they come out one by one on the host's schedule, not all at once (" .. steps .. " steps)")
   check(c.playDelay >= 0.04 and c.playDelay <= 0.35, "the delay stays small (" .. string.format("%.0f ms", c.playDelay * 1000) .. ")")
   check(c.interval > 0.02 and c.interval < 0.06, "each one is smoothed over the send interval (" .. string.format("%.3f", c.interval) .. " s)")
+  -- a lost packet on a real line: nothing for 0.4 s, then everything held back comes at once
+  -- (owner, 2026-11-13: "popcorning"). It's played through faster, never in one hop.
+  local h0 = base + 4 / 30
+  for i = 1, 30 do -- steady again
+    tt = tt + 1 / 30
+    snapAt(h0 + i / 30, 400 + i)
+    battle.playSnaps()
+  end
+  local h1 = h0 + 30 / 30
+  local K = tt - h1 -- the trip: the host's clock is tt - K
+  for _ = 1, 24 do tt = tt + 1 / 60 battle.playSnaps() end -- the stall
+  check(#c.queue == 0, "during the stall the screen waits on the last update")
+  for i = 1, 12 do snapAt(h1 + i / 30, 500 + i * 5) end
+  local most, frames = 0, 0
+  while #c.queue > 0 and frames < 200 do
+    local before = #c.queue
+    tt = tt + 1 / 60
+    battle.playSnaps()
+    most = math.max(most, before - #c.queue)
+    frames = frames + 1
+  end
+  check(most <= 2, "the held-back updates play one or two a frame, not all at once (" .. most .. ")")
+  check(frames > 8 and frames < 60, "and catch up within a second (" .. frames .. " frames)")
+  -- (the host went on meanwhile; the trip is now longer than at the start: within a few
+  -- seconds the buffer follows it, smoothing again instead of playing each one as it comes)
+  for i = 1, 300 do tt = tt + 1 / 30 snapAt(tt - K, 600 + i) battle.playSnaps() end
+  check(math.abs(c.offset - K) < 0.01, "the trip it expects follows the longer route (" .. string.format("%.0f ms off", (c.offset - K) * 1000) .. ")")
+  check(#c.queue >= 1, "updates wait in the buffer again, to be smoothed")
+  check((c.behind or 0) < 0.05, "caught up: back on the normal delay (" .. string.format("%.0f ms", (c.behind or 0) * 1000) .. ")")
   -- the banner options draw without errors
   for _, mode in ipairs({ 1, 2, 3 }) do
     local saved = net.option

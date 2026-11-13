@@ -1047,6 +1047,8 @@ local function startView(msg)
     C.lists, C.interp = {}, setmetatable({}, { __mode = "k" })
     C.lastAt, C.interval = love.timer.getTime(), 0.05
     C.queue, C.offset, C.spread, C.sendGap, C.lastHt, C.creptAt = {}, nil, nil, nil, nil, nil -- (playout buffer)
+    C.pclock, C.lastPlayed, C.playedAt, C.behind = nil, nil, nil, nil
+    C.minA, C.minB, C.winAt = nil, nil, nil
     C.viewStartAt = love.timer.getTime() -- the "WATCHING" banner fades from here (option watchBanner)
     C.hostName = type(msg.host) == "string" and msg.host or "Host"
     applySnap(msg)
@@ -1244,6 +1246,14 @@ end
 -- delay to the orders". 40 ms lets a fast host rate shrink the delay; it still grows by itself
 -- with the spread when the line gets uneven.)
 local PLAY_MIN, PLAY_MAX = 0.04, 0.35
+-- (owner, 2026-11-13: a teammate on a real line saw his soldiers "popcorning", hop from spot to
+-- spot.) Updates are reliable and in order, so one lost packet holds the next ones back until
+-- it's sent again, a round trip later: a stall longer than the buffer, then a clump. The clump
+-- used to play all at once (one hop). Now the screen keeps its own play clock on the host's
+-- time: it never runs past the updates it has (it waits on the last one instead of jumping
+-- later), and when it's behind it plays the backlog faster, up to FAST times, gliding through
+-- each one, until it's caught up. Only more than JUMP behind does it skip ahead.
+local FAST, JUMP = 2.0, 1.5
 
 function battle.queueSnap(msg)
     local now = love.timer.getTime()
@@ -1254,7 +1264,16 @@ function battle.queueSnap(msg)
         return
     end
     local trip = now - ht
-    if not C.offset or trip < C.offset then C.offset = trip end
+    -- offset: the shortest trip of the last 3-6 s (two 3 s windows). It drops at once to a
+    -- shorter trip and follows a route that got longer within seconds. (It was the shortest
+    -- trip ever, creeping up 2 ms a second: after a line got slower, updates came later than
+    -- the buffer expected and played the moment they came, unsmoothed.)
+    if not C.winAt or now - C.winAt > 3 then
+        C.minA, C.minB, C.winAt = C.minB or trip, trip, now
+    elseif trip < C.minB then
+        C.minB = trip
+    end
+    C.offset = math.min(C.minA, C.minB)
     C.spread = (C.spread or 0) * 0.95 + math.abs(trip - C.offset) * 0.05
     if C.lastHt then
         local gap = ht - C.lastHt
@@ -1264,29 +1283,53 @@ function battle.queueSnap(msg)
     local delay = math.max(PLAY_MIN, math.min(PLAY_MAX, 2.5 * (C.sendGap or 0.033) + 2.5 * C.spread))
     C.playDelay = delay
     C.queue = C.queue or {}
-    C.queue[#C.queue + 1] = { at = ht + C.offset + delay, ht = ht, msg = msg }
+    C.queue[#C.queue + 1] = { ht = ht, msg = msg }
 end
 
 -- for the stats panel: how far behind the host this screen plays (ms), or nil
 function battle.bufferMs()
-    return C and C.playDelay and math.floor(C.playDelay * 1000 + 0.5) or nil
+    if not (C and C.playDelay) then return nil end
+    return math.floor((C.playDelay + math.max(0, C.behind or 0)) * 1000 + 0.5)
+end
+
+local function playOne(e, rate)
+    -- smooth this one over the time until the next one is due (shorter while catching up)
+    local nextE = C.queue[1]
+    local span = nextE and (nextE.ht - e.ht) or (C.sendGap or 0.05)
+    C.interval = math.max(0.016, math.min(0.25, span / rate))
+    C.lastPlayed = e.ht
+    applySnap(e.msg)
 end
 
 -- Every frame (and before the battle ends): apply the updates whose time has come.
 -- all = true: everything waiting, now.
 function battle.playSnaps(all)
     if not C or not C.queue then return end
+    local q = C.queue
     local now = love.timer.getTime()
-    if C.offset then C.offset = C.offset + 0.002 * (now - (C.creptAt or now)) end -- (follow a slower route)
-    C.creptAt = now
-    while C.queue[1] and (all or C.queue[1].at <= now) do
-        local e = table.remove(C.queue, 1)
-        -- smooth this one over the time until the next one is due
-        local nextE = C.queue[1]
-        local span = nextE and (nextE.ht - e.ht) or (C.sendGap or 0.05)
-        C.interval = math.max(0.016, math.min(0.25, span))
-        applySnap(e.msg)
+    local dt = now - (C.playedAt or now)
+    C.playedAt = now
+    if all or not C.offset then
+        while q[1] do playOne(table.remove(q, 1), 1) end
+        C.pclock = C.lastPlayed
+        return
     end
+    -- the host's time this screen should show now
+    local target = now - C.offset - (C.playDelay or PLAY_MIN)
+    C.pclock = C.pclock or target
+    local behind = target - C.pclock
+    local rate = 1
+    if behind > JUMP then
+        C.pclock = target -- too far behind to catch up smoothly
+    else
+        rate = math.max(0.75, math.min(FAST, 1 + behind * 3))
+        C.pclock = math.min(target, C.pclock + dt * rate)
+    end
+    -- never past the newest update there is: wait on it (the backlog then plays faster)
+    local newest = q[#q] and q[#q].ht or C.lastPlayed
+    if newest and C.pclock > newest then C.pclock = newest end
+    C.behind = target - C.pclock
+    while q[1] and q[1].ht <= C.pclock do playOne(table.remove(q, 1), rate) end
 end
 
 -- Client: replaces the game's update while watching.
