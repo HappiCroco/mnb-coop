@@ -292,21 +292,45 @@ umsg.t, umsg.view = "snap", T.viewState()
 send(umsg)
 check(T.getClient().hostPaused == false, "host resumed: the banner goes")
 
--- updates in clumps over a long connection: moves are smoothed over the longest recent gap
+-- playout buffer: the host sends every 1/30 s; they arrive in clumps; the teammate plays them
+-- back on the host's schedule, a short moment behind, one by one
 do
   local realTime = love.timer.getTime
   local tt = 5000
   love.timer.getTime = function() return tt end
   local c = T.getClient()
-  c.lastAt, c.avgGap, c.peakGap = tt, nil, nil
-  for _, gap in ipairs({ 0.005, 0.005, 0.12, 0.005, 0.005 }) do
-    tt = tt + gap
+  c.queue, c.offset, c.spread, c.sendGap, c.lastHt = {}, nil, nil, nil, nil
+  local hostClock = 100
+  local function snapAt(ht, x)
     player = hostP
+    hostP.deployedTroops[1].x = x
     local m = T.capture(st)
-    m.t = "snap"
+    m.t, m.ht = "snap", ht
     send(m)
   end
-  check(c.interval > 0.1 and c.interval <= 0.25, "after a clump, a move still spans the last long gap (" .. c.interval .. " s)")
+  -- warm up: steady updates teach the buffer the trip time and the send interval
+  for i = 1, 30 do
+    tt = tt + 1 / 30
+    snapAt(hostClock + i / 30, 200 + i)
+    battle.playSnaps()
+  end
+  local played = battle._mirror.deployedTroops[1].x
+  -- now four updates sent 1/30 s apart arrive together, 0.1 s late
+  local base = hostClock + 31 / 30
+  tt = tt + 0.1 + 1 / 30
+  for i = 0, 3 do snapAt(base + i / 30, 300 + i * 10) end
+  check(#c.queue >= 4, "a clump waits in the buffer (" .. #c.queue .. " waiting)")
+  local seen = {}
+  for _ = 1, 30 do
+    tt = tt + 1 / 60
+    battle.playSnaps()
+    seen[#seen + 1] = #c.queue
+  end
+  local steps, prev = 0, seen[1]
+  for i = 2, #seen do if seen[i] < prev then steps = steps + 1 end prev = seen[i] end
+  check(steps >= 3 and #c.queue == 0, "they come out one by one on the host's schedule, not all at once (" .. steps .. " steps)")
+  check(c.playDelay >= 0.08 and c.playDelay <= 0.35, "the delay stays small (" .. string.format("%.0f ms", c.playDelay * 1000) .. ")")
+  check(c.interval > 0.02 and c.interval < 0.06, "each one is smoothed over the send interval (" .. string.format("%.3f", c.interval) .. " s)")
   -- the banner options draw without errors
   for _, mode in ipairs({ 1, 2, 3 }) do
     local saved = net.option
