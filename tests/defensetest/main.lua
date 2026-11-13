@@ -295,6 +295,12 @@ player.placeables = {}
 defense.afterSetup(false)
 check(not defense.on, "resume without a radar: an ordinary Classic battle")
 player.placeables = saved
+defense.on = false -- reached some other way, never through afterSetup
+local gs = player.gameState
+player.gameState = 0
+defense.update()
+check(defense.on, "a running battle with the radar turns the defense back on by itself")
+player.gameState = gs
 defense.afterSetup(false)
 
 -- wave pace: living Germans count half in the defense (the qm.toml patch on the wave timer)
