@@ -1,6 +1,6 @@
 # Mud and Blood Co-op. Standalone; QuarterMaster 1.8's menu (or the old GMenu) gives it an options page and page numbers.
 [manifest]
-version = "1.2.1"
+version = "1.2.2"
 priority = 80
 
 # For QuarterMaster's mod list (Mods > Browse); the game ignores it.
