@@ -428,6 +428,10 @@ local function placedVolume(ev)
 end
 battle.placedVolume = placedVolume
 
+-- long sounds that aren't loops but still change while playing (tracked like loops)
+local LONG_SOUNDS = { introTune = true }
+local lastSentVol = setmetatable({}, { __mode = "k" })
+
 local function hostNoteSound(src)
     local name = nameOf[src]
     if not name and love.timer.getTime() - lastNameScan > 2 then
@@ -443,12 +447,31 @@ local function hostNoteSound(src)
         ev.k, ev.x, ev.y, ev.f = place.k, math.floor(place.x + 0.5), math.floor(place.y + 0.5), q(place.f)
     end
     local okl, looping = pcall(src.isLooping, src)
-    if okl and looping then
+    looping = okl and looping
+    if looping or LONG_SOUNDS[name] then
+        -- (played again while still tracked: the teammate's old copy stops first, or it
+        -- would play on with nobody left to stop it)
+        if instId[src] then H.snd[#H.snd + 1] = { s = instId[src] } end
         nextInst = nextInst + 1
         instId[src] = nextInst
+        lastSentVol[src] = ev.v
         ev.i = nextInst
+        if looping then ev.l = 1 end
     end
     H.snd[#H.snd + 1] = ev
+end
+
+-- host: a tracked sound (a loop, or a long one) got a new loudness after it started:
+-- tensionLoop as the front moves (urb_engine.lua:6416-6448), introTune fading out
+-- (main.lua:4352). Sounds placed by distance (engines: their setVolume follows a gunScale)
+-- aren't sent: each teammate works those out from their own camera (updateLoopVolumes).
+local function hostNoteVolume(src, vol)
+    local id = instId[src]
+    if not id or soundPlace[src] or type(vol) ~= "number" or #H.snd >= 48 then return end
+    local last = lastSentVol[src]
+    if last and math.abs(last - vol) < 0.02 and not (vol == 0 and last ~= 0) then return end
+    lastSentVol[src] = q(vol)
+    H.snd[#H.snd + 1] = { u = id, v = q(vol) }
 end
 
 local function hookSources()
@@ -470,8 +493,23 @@ local function hookSources()
     end
     if rawSetVolume then
         methods.setVolume = function(s, v, ...)
-            if H then pcall(noteVolume, s, v) end
+            if H then
+                pcall(noteVolume, s, v)
+                pcall(hostNoteVolume, s, v)
+            end
             return rawSetVolume(s, v, ...)
+        end
+    end
+    -- the game stops everything at once when a battle ends (urb_engine.lua:5684, 5711):
+    -- teammates still watching the mission report stop theirs too
+    local rawStopAll = love.audio.stop
+    if type(rawStopAll) == "function" then
+        love.audio.stop = function(...)
+            if H and select("#", ...) == 0 then
+                H.snd[#H.snd + 1] = { sa = 1 }
+                for s in pairs(instId) do instId[s] = nil end
+            end
+            return rawStopAll(...)
         end
     end
     methods.stop = function(s, ...)
@@ -493,7 +531,19 @@ battle.soundHooked = hookSources()
 
 local function clientPlaySounds(list)
     for _, ev in ipairs(list) do
-        if ev.s then
+        if ev.sa then
+            -- the host stopped every sound (a battle ended)
+            for id, c in pairs(C.inst) do
+                pcall(rawStop, c)
+                C.inst[id] = nil
+            end
+        elseif ev.u then
+            -- a tracked sound got a new loudness on the host
+            local c = C.inst[ev.u]
+            if c and (C.instName and C.instName[c]) ~= "ddayExploLoop" then -- (that one: my camera)
+                pcall(c.setVolume, c, math.max(0, math.min(1, tonumber(ev.v) or 1)))
+            end
+        elseif ev.s then
             local c = C.inst[ev.s]
             if c then
                 pcall(rawStop, c)
@@ -508,7 +558,7 @@ local function clientPlaySounds(list)
                     pcall(c.setVolume, c, placedVolume(ev) or tonumber(ev.v) or 1)
                     pcall(c.setPitch, c, math.max(0.01, tonumber(ev.p) or 1))
                     if ev.i then
-                        pcall(c.setLooping, c, true)
+                        if ev.l then pcall(c.setLooping, c, true) end
                         C.inst[ev.i] = c
                         C.instName = C.instName or setmetatable({}, { __mode = "k" })
                         C.instName[c] = ev.n
@@ -537,7 +587,12 @@ local function updateLoopVolumes()
     for _, c in pairs(C.inst) do
         local name = C.instName[c]
         local digits = type(name) == "string" and name:match("%d+$")
-        if digits then
+        if name == "ddayExploLoop" then
+            -- the beach's distant explosions: quieter the further right the camera is
+            -- (urb_engine.lua:6466), from my own camera
+            local sx = tonumber(player.screenx) or 0
+            pcall(c.setVolume, c, math.max(0, math.min(1, (100 - sx / 100) / 100)))
+        elseif digits then
             -- (the id is the longest tail of digits that is a vehicle: "hvyTankIdle2" .. id)
             local v
             for k = 1, #digits do
@@ -848,6 +903,51 @@ function battle.onClientMessage(seat, msg)
     return true
 end
 
+-- Flashes and banners the game keeps in globals, set in its update and cleared by its draw
+-- (sync audit 2026-11-13, docs/sync-audit.md): lightning (lightningFlash, urb_engine.lua:5821,
+-- with ambientLight 100 at 5819), gunfire and explosions lighting a night sky
+-- (ambientLightFlash, urb_engine.lua:9691, 10465), and the "critical engagement" banner
+-- (majorTimer / majorEvent, urb_engine.lua:5761, drawn while majorTimer > 255). The host
+-- notes them every frame (a flash lasts one frame) and sends them with the next update.
+local function hostLatchFx()
+    local f = H.fx or {}
+    H.fx = f
+    local lf = tonumber(rawget(_G, "lightningFlash")) or 0
+    if lf > 0 then f.lf = math.max(f.lf or 0, lf) end
+    local af = tonumber(rawget(_G, "ambientLightFlash")) or 0
+    if af > 0 then f.af = math.max(f.af or 0, af) end
+end
+
+local function hostFxMessage()
+    local f = H.fx or {}
+    H.fx = {}
+    local shown = (tonumber(rawget(_G, "majorTimer")) or 0) > 255
+    local ev = rawget(_G, "majorEvent")
+    ev = type(ev) == "string" and ev:sub(1, 80) or nil
+    if shown ~= (H.majorShown or false) or (shown and ev ~= H.majorEvent) then
+        H.majorShown, H.majorEvent = shown, ev
+        f.mt, f.me = shown and 355 or 0, ev
+    end
+    if next(f) then return f end
+    return nil
+end
+
+-- client: show them (the game's draw clears the flashes again)
+local function applyFx(f)
+    if type(f) ~= "table" then return end
+    local lf, af = tonumber(f.lf), tonumber(f.af)
+    if lf and lf > 0 then
+        lightningFlash = math.min(255, lf)
+        ambientLight = 100
+    end
+    if af and af > 0 then ambientLightFlash = math.max(tonumber(ambientLightFlash) or 0, math.min(255, af)) end
+    if tonumber(f.mt) then
+        majorTimer = tonumber(f.mt)
+        if type(f.me) == "string" then majorEvent = f.me:sub(1, 80) end
+    end
+end
+battle._applyFx = applyFx
+
 local function hostTick()
     H.seq = H.seq + 1
     H.sentAt[H.seq % SENT_KEEP] = { n = H.seq, t = love.timer.getTime() }
@@ -856,6 +956,7 @@ local function hostTick()
     msg.ht = love.timer.getTime() -- host clock: teammates play the updates back on this schedule
     msg.img = imageGlobals(H.imgSent, false)
     msg.view = viewState()
+    msg.fx = hostFxMessage()
     if player.gameState ~= 0 then msg.g = debriefGlobals(H.gSent, false) end -- only the mission-end pages need them
     if next(H.pend) then
         msg.sp = H.pend
@@ -900,6 +1001,7 @@ function battle.hostUpdate(dt)
     end
     if not H then return end
     hostScanSpawns()
+    hostLatchFx()
     H.acc = H.acc + dt
     updateRate(love.timer.getTime())
     local interval = 1 / battle.currentRate() -- (config.lua, maybe lowered; at most one per frame)
@@ -920,8 +1022,14 @@ function battle.hostUpdate(dt)
 end
 
 -- ---------------------------------------------------------------- client side
+-- (besides position and rotations: fields the game changes every frame that would otherwise
+-- step at the update rate on a teammate's screen. Sync audit 2026-11-13, docs/sync-audit.md:
+-- a turret turning (ai.lua:3583), a plane fading and growing (urb_engine.lua:10329-10340), the
+-- promotion and highlight rings (ai.lua:34-43).)
+local SMOOTH_FIELDS = { turretCurrentAngle = true, alpha = true, scale = true,
+    promotionCircle = true, highlightCircle = true }
 local function isInterpField(f)
-    return f == "x" or f == "y" or (type(f) == "string" and f:find("[Rr]otation") ~= nil)
+    return f == "x" or f == "y" or SMOOTH_FIELDS[f] == true or (type(f) == "string" and f:find("[Rr]otation") ~= nil)
 end
 
 local function lerpAngle(a, b, t)
@@ -1060,6 +1168,7 @@ local function applySnap(msg)
     if type(msg.img) == "table" then applyImageGlobals(msg.img) end
     if type(msg.g) == "table" then applyDebriefGlobals(msg.g) end
     if msg.view then applyView(msg.view) end
+    if msg.fx then applyFx(msg.fx) end
 end
 
 local function startView(msg)
@@ -1175,13 +1284,20 @@ end
 local LOBBED = { fragGrenade = true, flarePart = true, contactGrenade = true, redFlarePart = true,
     rifleGrenade = true, leuchtGrenade = true, rocketGrenade = true, stielgranate = true }
 local FACES_FLIGHT = { rifleGrenade = true, leuchtGrenade = true, rocketGrenade = true }
+-- these go off where they land and are gone (particlesSystem.lua:6785, 6808, 6858-6872); the
+-- explosion comes from the host. Only the rest roll on. (sync audit 2026-11-13)
+local GONE_ON_ARRIVAL = { rifleGrenade = true, leuchtGrenade = true, contactGrenade = true,
+    rocketGrenade = true, stielgranate = true }
+local GONE_SPRITES = { loot_molotov = true, loot_blendkorper = true }
 
+-- returns true when the particle is gone
 local function steerLobbed(p, dt)
     local tx, ty = tonumber(p.targetx), tonumber(p.targety)
     if not tx or not ty then return end
     local bounce, vel = tonumber(p.bounce) or 0, tonumber(p.velocity) or 0
     local d = math.sqrt((p.x - tx) ^ 2 + (p.y - ty) ^ 2)
     if d < 10 and bounce == 0 then
+        if GONE_ON_ARRIVAL[p.typez] or GONE_SPRITES[p.sprite] then return true end
         p.bounce, p.velocity, p.drag, p.spin = 1, 100 + love.math.random(1, 200), 5, 0
         p.targetx = p.x + 150 - love.math.random(1, 300)
         p.targety = p.y + 150 - love.math.random(1, 300)
@@ -1215,7 +1331,7 @@ local function moveParticles(list, dt)
             table.remove(list, i)
         else
             local lobbed = LOBBED[p.typez]
-            if lobbed then steerLobbed(p, dt) end
+            if lobbed and steerLobbed(p, dt) then p.lifeSpan = -1 end
             local life = (tonumber(p.lifeSpan) or 0) - dt
             p.lifeSpan = life
             p.innerRotation = (tonumber(p.innerRotation) or 0) + (tonumber(p.spin) or 0) * step
@@ -1436,6 +1552,16 @@ function battle.clientUpdate(dt)
         else
             selectCircle = selectCircle - dt * 10
             if selectCircle <= 0 then selectCircleUp = 1 end
+        end
+    end
+    -- the red ring on a retreating soldier pulses the same way (drawFiles.lua:1906-1915)
+    if type(panicCircle) == "number" then
+        if panicCircleUp == 1 then
+            panicCircle = panicCircle + dt * 10
+            if panicCircle >= 10 then panicCircleUp = 0 end
+        else
+            panicCircle = panicCircle - dt * 10
+            if panicCircle <= 0 then panicCircleUp = 1 end
         end
     end
     safeCall(screenControl, dt)

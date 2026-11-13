@@ -544,8 +544,27 @@ do
   check(math.abs(g.x - 400) <= 160 and math.abs(g.y - 300) <= 160, "and rolled only a little way from it")
   local rg = { typez = "rifleGrenade", x = 0, y = 0, targetx = 0, targety = 300, velocity = 400, drag = 0, rotationz = 0,
     lob = 300, bounce = 0, walled = 0, scale = 1, expand = 0, shrink = 0, lifeSpan = 10, spin = 0, fade = 0, drift = 0 }
-  T.moveParticles({ rg }, 1 / 60)
+  local rgl = { rg }
+  T.moveParticles(rgl, 1 / 60)
   check(rg.y > 0 and math.abs(rg.x) < 1, "a rifle grenade turns toward its spot")
+  for _ = 1, 120 do T.moveParticles(rgl, 1 / 60) end
+  check(#rgl == 0, "and is gone when it lands (it goes off there), it doesn't roll on")
+  local molly = { typez = "fragGrenade", sprite = "loot_molotov", x = 0, y = 0, targetx = 5, targety = 0, velocity = 300,
+    drag = 0, rotationz = 0, lob = 5, bounce = 0, walled = 0, scale = 1, expand = 0, shrink = 0, lifeSpan = 10, spin = 0, fade = 0, drift = 0 }
+  local ml = { molly }
+  T.moveParticles(ml, 1 / 60)
+  check(#ml == 0, "a molotov bursts where it lands")
+end
+
+-- flashes and banners kept in the game's globals reach teammates (sync audit 2026-11-13)
+do
+  lightningFlash, ambientLight, ambientLightFlash, majorTimer, majorEvent = 0, 0, 0, 0, nil
+  battle._applyFx({ lf = 200, af = 60, mt = 355, me = "Operation Test" })
+  check(lightningFlash == 200 and ambientLight == 100, "lightning flashes on a teammate's screen too")
+  check(ambientLightFlash == 60, "and gunfire lights the night sky")
+  check(majorTimer == 355 and majorEvent == "Operation Test", "the critical engagement banner shows")
+  battle._applyFx({ mt = 0 })
+  check(majorTimer == 0, "and goes when the host's does")
 end
 
 print(("%d passed, %d failed"):format(passes, fails))
