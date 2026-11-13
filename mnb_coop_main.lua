@@ -373,6 +373,33 @@ iconClick = squad.wrapIconClick(iconClick)
 -- XP day cap in the co-op campaign (coop_campaign.lua): no farming the easy days.
 giveXp = campaign.wrapGiveXp(giveXp)
 
+-- weaponFiring (urb_engine.lua:9607) measures the shot only when targetPointer > 0, then
+-- compares the distance anyway: a soldier aiming at a troop whose id is 0 or below crashed
+-- the host (owner, 2026-11-12, urb_engine.lua:9865 "compare number with nil"). Such a shot
+-- is skipped (the soldier picks a new target) and logged once, to find who has that id.
+local coopWeaponFiring = weaponFiring
+local loggedBadTarget = false
+function weaponFiring(idz, ...)
+    local t = type(player) == "table" and type(player.deployedTroops) == "table" and player.deployedTroops[idz]
+    if type(t) == "table" and (tonumber(t.targetPointer) or 0) <= 0 then
+        if not loggedBadTarget then
+            loggedBadTarget = true
+            local who = {}
+            for _, o in ipairs(player.deployedTroops) do
+                if type(o) == "table" and (tonumber(o.id) or 0) <= 0 then
+                    who[#who + 1] = string.format("%s/%s id=%s squad=%s seat=%s owner=%s twin=%s", tostring(o.name), tostring(o.faction),
+                        tostring(o.id), tostring(o.coopSquad), tostring(o.coopSeat), tostring(o.coopOwner), tostring(o.coopSide))
+                end
+            end
+            print(string.format("[mnb_coop] skipped a shot at target %s by %s (%s); troops with id <= 0: %s",
+                tostring(t.targetPointer), tostring(t.name), tostring(t.faction), #who > 0 and table.concat(who, "; ") or "none"))
+        end
+        t.targetPointer = 0 -- (the game's "no target", ai.lua:2730)
+        return
+    end
+    return coopWeaponFiring(idz, ...)
+end
+
 -- Career XP for the teammates (coop_campaign.lua sendCareer): the gain the game's own
 -- end-of-battle bookkeeping gave the host goes to each teammate too.
 local coopPostMission = postMissionAdmin
