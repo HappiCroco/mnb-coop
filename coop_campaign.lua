@@ -1179,6 +1179,45 @@ local function addClassicGame(p, xp, wave)
     end)
 end
 
+-- Test cheats (coop_cheats.lua): career XP on profile `p`, promoted as far as it reaches.
+-- kind "campaign" (experience, rank up to 13, a skill credit each) or "classic"
+-- (mnb2Experience, command rank, a para credit each). Returns the number of promotions.
+function campaign.addCareerXp(p, kind, xp)
+    local n = 0
+    if kind == "campaign" then
+        p.experience = (tonumber(p.experience) or 0) + xp
+        while n < 20 and (tonumber(p.rank) or 0) < 13 and promote(p, "experience", "rank", function(q)
+            q.skillCredit = (tonumber(q.skillCredit) or 0) + 1
+        end) do n = n + 1 end
+    else
+        p.mnb2Experience = (tonumber(p.mnb2Experience) or 0) + xp
+        while n < 20 and promote(p, "mnb2Experience", "mnb2Rank", function(q)
+            q.paraChallengeCredit = (tonumber(q.paraChallengeCredit) or 0) + 1
+        end) do n = n + 1 end
+    end
+    return n
+end
+
+-- The same on a Classic save file (leaving Classic copies its rank over the profile's).
+-- `path` is read and written without the co-op redirect. False if there's no such save.
+function campaign.addClassicSaveXp(path, xp)
+    if not realFs.getInfo(path) then return false end
+    local okl, chunk = pcall(realFs.load, path)
+    local ok2, c = false, nil
+    if okl and type(chunk) == "function" then ok2, c = pcall(chunk) end
+    if not (ok2 and type(c) == "table") then return false end
+    campaign.addCareerXp(c, "classic", xp)
+    local data = serialize(c)
+    if data then pcall(realFs.write, path, data) end
+    return true
+end
+
+-- the real profile's save, written now (test cheats on the main menu), redirect or not
+function campaign.saveRealProfile(p)
+    local data = serialize(p)
+    if data then pcall(realFs.write, "saveMNB3.lua", data) end
+end
+
 -- Teammate: apply one "career" message to this player's co-op profile (and Classic save).
 function campaign.applyCareer(msg)
     local xp = math.floor(tonumber(msg.xp) or 0)

@@ -73,6 +73,13 @@ return {
             description = "While connected: ping, upload/download per second and totals, top right. Ctrl+F8 toggles it too.",
         },
         {
+            id = "testCheats",
+            label = "Test: cheats (F6)",
+            type = "checkbox",
+            default = false,
+            description = "F6 opens a cheat panel for testing. On the main menu it changes your own profile (career and Classic XP, skill credits, squad XP), in the co-op screens your co-op profile, and in a battle you play or host the battle (TP for everyone, heal, XP, abilities ready, grenades and other items at the next click, next wave).",
+        },
+        {
             id = "simLag",
             label = "Test: simulated ping",
             type = "cycle",

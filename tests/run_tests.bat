@@ -7,7 +7,7 @@ setlocal
 if "%LOVEC%"=="" set "LOVEC=D:\Programming\LOVE\lovec.exe"
 set "COOP_DIR=%~dp0.."
 cd /d "%~dp0"
-for %%t in (compilecheck cooptest settingstest camptest classictest hubtest squadtest battletest ordertest defensetest windowtest qmtest modtest ribtest steamtest) do (
+for %%t in (compilecheck cooptest settingstest camptest classictest hubtest squadtest battletest ordertest defensetest windowtest qmtest modtest ribtest steamtest cheattest) do (
     echo == %%t
     "%LOVEC%" %%t
 )

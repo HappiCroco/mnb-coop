@@ -25,6 +25,7 @@ local wallet = require("includes/mods/mnb_coop/coop_wallet")
 local qmInput = require("includes/mods/mnb_coop/coop_qminput")
 local ribbons = require("includes/mods/mnb_coop/coop_ribbons")
 local steam = require("includes/mods/mnb_coop/coop_steam")
+local cheats = require("includes/mods/mnb_coop/coop_cheats") -- F6 test panel (option testCheats)
 
 mnbCoop = { net = net, profile = profile, lobby = lobby, hud = hud, campaign = campaign, battle = battle,
     squad = squad, defense = defense, ribbons = ribbons, wallet = wallet, steam = steam, version = net.VERSION }
@@ -488,6 +489,7 @@ local VIEW_KEYS = { f9 = true, tab = true, f3 = true, f4 = true }
 local function onKeypressed(key, ...)
     if lobby.wantsKeyboard() then return lobby.keypressed(key) end
     if hud.keypressed(key) then return end
+    if cheats.keypressed(key) then return end -- F6: the test cheat panel
     -- G: give TP to the next player (Classic wallets, coop_wallet.lua)
     if key == wallet.GIVE_KEY and wallet.keypressed(key) then return end
     if battle.viewing then
@@ -622,11 +624,15 @@ function love.draw(...)
     end
     local ok, err = pcall(hud.draw)
     if not ok then print("[mnb_coop] stats panel: " .. tostring(err)) end
+    local okc, errc = pcall(cheats.draw)
+    if not okc then print("[mnb_coop] cheat panel: " .. tostring(errc)) end
     pcall(mnbCoop.drawToasts) -- error and notice pop-ups, on top of everything
 end
 
 local coopMousepressed
 local function onMousepressed(x, y, button, ...)
+    local okc, usedc = pcall(cheats.mousepressed, x, y, button)
+    if okc and usedc then return end -- (the test cheat panel, or placing an item)
     if battle.viewing then
         if battle.menuOpen then return end -- the teammate's Esc menu takes the click (on release)
         pcall(squad.clientMousepressed, x, y, button)
@@ -646,6 +652,8 @@ end
 
 local coopMousereleased
 local function onMousereleased(x, y, button, ...)
+    local okc, usedc = pcall(cheats.mousereleased, x, y, button)
+    if okc and usedc then return end
     if battle.viewing then
         if battle.menuOpen then
             pcall(battle.menuClick, x, y)

@@ -160,6 +160,19 @@ function wallet.hostUpdate()
     end
 end
 
+-- Test cheats: n more TP in every wallet (the host's too), no cap.
+function wallet.addAll(n)
+    if not wallet.active() or swapped then
+        player.tp = (tonumber(player.tp) or 0) + n
+        return
+    end
+    ensure()
+    set(1, (wallet.get(1) or 0) + n)
+    for s = 2, net.MAX_SEATS or 3 do
+        if net.seats[s] then set(s, (wallet.get(s) or 0) + n) end
+    end
+end
+
 function wallet.forgetSeat(seat)
     if seat then
         wallets[seat], lastSent[seat], lastGive[seat] = nil, nil, nil
