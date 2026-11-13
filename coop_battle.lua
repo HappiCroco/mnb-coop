@@ -570,7 +570,10 @@ local function applyImageGlobals(list)
                 end
             end
             if img then
-                if C.savedGlobals[name] == nil then C.savedGlobals[name] = { v = rawget(_G, name) } end
+                -- this machine's own picture comes back when the view ends; if it had none (it
+                -- never played a battle itself), the host's stays: an empty `bg` crashed the next
+                -- battle drawn here (drawFiles.lua:56, owner 2026-11-12)
+                if C.savedGlobals[name] == nil and rawget(_G, name) ~= nil then C.savedGlobals[name] = { v = rawget(_G, name) } end
                 _G[name] = img
             end
         end

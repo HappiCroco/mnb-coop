@@ -599,7 +599,17 @@ local function drawPauseLobby()
 end
 
 local coopDraw = love.draw
+local fallbackBg = nil
 function love.draw(...)
+    -- the battle's background picture (the game sets `bg` when a battle starts) must never be
+    -- missing when a battle frame is drawn: drawState0 draws it unchecked (drawFiles.lua:56)
+    if type(player) == "table" and player.gameState == 0 and rawget(_G, "bg") == nil then
+        if not fallbackBg then
+            local okb, img = pcall(love.graphics.newImage, "sprites/bg.png")
+            fallbackBg = okb and img or nil
+        end
+        if fallbackBg then bg = fallbackBg end
+    end
     if battle.viewing then
         -- the host's battle drawn with the game's code: a missing piece must not
         -- crash the teammate's game, it shows as a message and goes in the log once
