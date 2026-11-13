@@ -149,6 +149,26 @@ check(not hostNet.allReady() and not c1.myReady() and not c2.myReady(), "after a
 c1.setReady(true) c2.setReady(true)
 waitSec(1.2)
 check(hostNet.allReady(), "ready again for the next one")
+-- simulated ping (testing): a joiner set to 300 ms holds what it receives back ~150 ms, in order
+do
+  local realOption = c1.option
+  c1.option = function(id, d) if id == "simLag" then return 300 end return realOption(id, d) end
+  local got = {}
+  local prevHook = c1.onHostMessage
+  c1.onHostMessage = function(msg) if msg.t == "simtest" then got[#got + 1] = { n = msg.n, at = love.timer.getTime() } end end
+  local sentAt = love.timer.getTime()
+  for i = 1, 5 do hostNet.sendTo(2, { t = "simtest", n = i }) end
+  hostNet.flush()
+  for _ = 1, 80 do pump(1) if #got == 5 then break end end
+  check(#got == 5 and got[1].at - sentAt >= 0.14, "held back by about half the simulated ping (" ..
+    (got[1] and string.format("%.0f ms", (got[1].at - sentAt) * 1000) or "none") .. ")")
+  local inOrder = true
+  for i = 1, #got do if got[i].n ~= i then inOrder = false end end
+  check(inOrder, "and still in order")
+  check(c1.pings()[1] and c1.pings()[1].avg >= 300, "the ping shown includes it")
+  c1.onHostMessage, c1.option = prevHook, realOption
+  pump(30) -- (anything still held comes out)
+end
 -- the ready room: the host's stage reaches every teammate, and goes away again
 hostNet.setStage("CO-OP CLASSIC")
 waitSec(1.2)

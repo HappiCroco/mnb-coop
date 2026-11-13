@@ -133,6 +133,10 @@ function net.pings()
     elseif server and net.role == "client" then
         out[1] = { avg = server:round_trip_time(), last = server:last_round_trip_time() }
     end
+    local sim = net.simLag() -- (a simulated ping counts, testing)
+    if sim > 0 then
+        for _, p in pairs(out) do p.avg, p.last = p.avg + sim, p.last + sim end
+    end
     return out
 end
 
@@ -814,6 +818,47 @@ end
 
 local serviceAll -- (below)
 
+-- ---------------------------------------------------------------- simulated ping (testing)
+-- (owner, 2026-11-12: "a ping simulator, so if I'm testing with myself it simulates what the
+-- other person is having") Option simLag = a round trip in ms. Everything this machine
+-- receives is held back by half of it (the other copy holds back the other half), plus a
+-- little jitter, plus now and then a stall the length of a whole round trip (what a lost
+-- packet costs on a reliable line). Order is kept, so held messages arrive in a bunch, as
+-- they do over a real long line. Pings shown and used by the automatic rate include it.
+local simQ = setmetatable({}, { __mode = "k" })    -- transport -> { { t, ev }, ... }
+local simLast = setmetatable({}, { __mode = "k" }) -- transport -> release time of the last held one
+
+function net.simLag()
+    local v = tonumber(net.option("simLag", 0)) or 0
+    return math.max(0, math.min(2000, v))
+end
+
+-- the next event from a transport (pcall-style: ok, event or nil)
+local function pull(h)
+    local lag = net.simLag()
+    local q = simQ[h]
+    if lag <= 0 and not (q and #q > 0) then return pcall(h.service, h, 0) end
+    if not q then
+        q = {}
+        simQ[h] = q
+    end
+    local now = love.timer.getTime()
+    if lag > 0 then
+        for _ = 1, 64 do
+            local ok, ev = pcall(h.service, h, 0)
+            if not ok then return ok, ev end
+            if not ev then break end
+            local d = lag / 2000 + love.math.random() * lag * 0.15 / 1000
+            if love.math.random() < 0.004 then d = d + lag / 1000 end -- a lost packet, resent
+            local t = math.max(simLast[h] or 0, now + d)
+            simLast[h] = t
+            q[#q + 1] = { t = t, ev = ev }
+        end
+    end
+    if q[1] and q[1].t <= now then return true, table.remove(q, 1).ev end
+    return true, nil
+end
+
 -- Called every frame from love.update.
 function net.update()
     if not host and not shost then return end
@@ -835,7 +880,7 @@ function net.update()
         end
         if now - lastLobbySent > 1 then
             for seat, peer in pairs(seatPeer) do
-                if net.seats[seat] then net.seats[seat].ping = peer:round_trip_time() end
+                if net.seats[seat] then net.seats[seat].ping = peer:round_trip_time() + net.simLag() end
             end
             broadcast({ t = "lobby", seats = lobbyView(), stage = net.stage })
             lastLobbySent = now
@@ -846,7 +891,7 @@ end
 -- One transport's events (the enet host, or the Steam one). False if the session was reset.
 function serviceAll(h)
     for _ = 1, 64 do
-        local ok, ev = pcall(h.service, h, 0)
+        local ok, ev = pull(h)
         if not ok then
             reset("Network error: " .. tostring(ev))
             return false

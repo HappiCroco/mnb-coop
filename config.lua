@@ -73,6 +73,15 @@ return {
             description = "While connected: ping, upload/download per second and totals, top right. Ctrl+F8 toggles it too.",
         },
         {
+            id = "simLag",
+            label = "Test: simulated ping",
+            type = "cycle",
+            default = 0,
+            options = { 0, 100, 200, 300, 500 },
+            labels = { "Off", "100 ms", "200 ms", "300 ms", "500 ms" },
+            description = "For testing two copies on one PC: everything this copy receives is held back as if the other player were far away (half the ping on each copy, a little jitter, and now and then a stall like a lost packet). Set it in both copies. Off for real games.",
+        },
+        {
             id = "debug",
             label = "Debug log",
             type = "checkbox",
