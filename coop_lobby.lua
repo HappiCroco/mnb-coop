@@ -114,6 +114,9 @@ end
 local function baseAddress()
     local s = profile.settings.shareAddress or ""
     if s ~= "" then return s end
+    -- hosting through Steam: "steam:<id>" reaches us from anywhere, no tunnel needed
+    local sa = net.steamAddress and net.steamAddress()
+    if sa then return sa end
     return (lobby.lanIp or "127.0.0.1") .. ":" .. port()
 end
 
@@ -121,7 +124,14 @@ end
 local function shareAddress()
     return baseAddress() .. (net.joinCode and ("#" .. net.joinCode) or "")
 end
-lobby.shareAddress = shareAddress -- (Steam's Join Game and invites carry it, coop_steam.lua)
+lobby.shareAddress = shareAddress
+-- What Steam's Join Game and invites carry (coop_steam.lua): the Steam address when we host
+-- through Steam (works from anywhere), else the address friends would type.
+function lobby.inviteAddress()
+    local sa = net.steamAddress and net.steamAddress()
+    if sa then return sa .. (net.joinCode and ("#" .. net.joinCode) or "") end
+    return shareAddress()
+end
 lobby.steam = nil -- coop_steam, set by mnb_coop_main
 
 local function requireCode()
@@ -266,7 +276,7 @@ local function links()
             (lobby.steam and lobby.steam.ok)
             and { "coopInvite", "INVITE (STEAM)", "Steam's invite window: friends who accept join this lobby.\n" ..
                 "Your friends also see Join Game on you in their Steam friends list.\n" ..
-                "They still need to reach this address: online, paste your playit.gg address above first." }
+                "Through Steam: no address, no port, no playit.gg." }
             or { "coopHelp", "PLAY ONLINE?", "Online play: run playit.gg, make a UDP tunnel to port " .. port() ..
             ",\npaste its address above, then COPY ADDRESS and send it to your teammates." },
             { "coopLeave", "CLOSE LOBBY", "Close the lobby; everyone is disconnected" },
@@ -282,8 +292,9 @@ local function links()
         { "coopHost", "HOST A LOBBY", "Open a lobby on UDP port " .. port() .. ". Up to " .. net.MAX_SEATS .. " players." },
         { "coopPaste", "PASTE ADDRESS", "Paste the host's address from the clipboard (Ctrl+V)" },
         { "coopClear", "CLEAR",         "Empty the address box" },
-        { "coopHelp", "HOW TO JOIN?", "Same house: the host's local address (like 192.168.0.10:47913).\n" ..
-        "Online: the host's playit.gg address (like name.playit.gg:12345)." },
+        { "coopHelp", "HOW TO JOIN?", "Easiest: accept the host's Steam invite, or Join Game on them in your Steam friends list.\n" ..
+        "Or paste the address the host copied: steam:<numbers>#CODE works from anywhere;\n" ..
+        "192.168.0.10:47913 in the same house; a playit.gg address also still works." },
     }
 end
 
@@ -483,7 +494,7 @@ function coopHelpButton() end
 function coopInviteButton()
     click()
     local ok, why = false, "Steam isn't available"
-    if lobby.steam then ok, why = lobby.steam.openInvite(shareAddress()) end
+    if lobby.steam then ok, why = lobby.steam.openInvite(lobby.inviteAddress()) end
     if not ok then flash("Steam invite: " .. tostring(why)) end
 end
 

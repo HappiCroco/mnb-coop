@@ -35,6 +35,7 @@ do
     if not ok then print("[mnb_coop] steam: " .. tostring(err)) end
     if not steam.ok then print("[mnb_coop] steam join off: " .. tostring(steam.why)) end
     lobby.steam = steam
+    net.steam = steam -- hosting and joining through Steam's relays ("steam:<id>")
 end
 
 -- A Steam join (invite accepted, Join Game, or the game started by Steam for one): taken
@@ -248,7 +249,7 @@ function love.update(dt, ...)
     pcall(lobby.updateRoom) -- teammates follow the host into and out of the ready room
     if steam.ok then
         -- Join Game on the host while a seat is free; a join that came in, once the menus can take it
-        local okst, errst = pcall(steam.update, net.role == "host" and lobby.shareAddress() or nil,
+        local okst, errst = pcall(steam.update, net.role == "host" and lobby.inviteAddress() or nil,
             net.playerCount() < net.MAX_SEATS, steamJoinNow)
         if not okst then print("[mnb_coop] steam: " .. tostring(errst)) end
     end

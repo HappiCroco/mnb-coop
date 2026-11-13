@@ -358,6 +358,27 @@ stays the vanilla **6, shared out** (solo 6, duo 3+3, trio 2+2+2; 4 players x 3 
   own pause_optionButton (saves the battle to carry on later) and lands on the lobby page; Options itself stays closed
   with teammates. A teammate's Esc (or F10) opens our menu over the battle: back / leave the battle (stay in the
   lobby) / leave the session (it replaced "Esc twice").
+- (v1.2.0) STEAM (owner, 2026-11-12: "URB doesn't need to do anything? Let's go!", "do step 2, I really hate
+  playit.gg"). The game's steam_api64.dll is a recent SDK (Friends v017, Apps v008, User v021, NetworkingMessages v002,
+  NetworkingUtils v004; SteamAPI_RegisterCallback exported); `coop_steam.lua` calls its flat C API through LuaJIT FFI.
+  No game file is changed; the game's luasteam (apps/friends/user/userStats/utils/UGC/input/extra only) is untouched.
+  * Join Game / invites: rich presence "connect" = "+mnb_coop steam:<host id>#CODE" while hosting with a free seat;
+    INVITE (STEAM) opens ActivateGameOverlayInviteDialogConnectString. A join arrives on the command line (`arg`,
+    GetLaunchCommandLine) or, game running, as callback 337; it waits for the main menu or the lobby, then net.join.
+  * Callbacks: a hand-built CCallbackBase { vtable, flags (8), id (12) }, vtable = run, run, size (MSVC reverses
+    the Run overloads; one function serves both). Steam runs them inside the game's own Steam.runCallbacks (steamz,
+    every second) and ours, every frame while a Steam session is up (SteamAPI_RunCallbacks).
+  * Transport: ISteamNetworkingMessages behind an enet-shaped stand-in (service/flush/destroy/totals; peer
+    send/round_trip_time/disconnect_now), so coop_net's guard, chunking and the battle sync are unchanged. Channel 2
+    handshake: "\1hi" (repeated) -> "\1ok" = connect; "\1p"/"\1q" each second = keep-alive + round trip; "\1by" =
+    leaving (handled after that pump's data, so a "refuse" sent before it arrives first); quiet > TIMEOUT[2] = gone.
+    Sends: reliable + no Nagle + auto-restart (41); data on channels 0/1. Session requests (callback 1251) are
+    accepted while hosting through Steam (the guard decides who stays) or from the host being joined.
+  * Hosting opens both: Steam and the UDP port (LAN, playit). The address shown/copied is "steam:<id>" unless a
+    playit address was pasted. Joining "steam:<id>#CODE" uses Steam; anything else enet. Two copies on one PC (one
+    Steam account) still use 127.0.0.1.
+  * Option steamJoin (on) switches all of it off at the next start. Test: steamtest (a fake Steam routing between
+    ids in one process: transport, then the real lobby code on top; struct layouts checked).
 - (v1.1.2) Gliding fix: a snap that changes other fields of a moving element no longer finishes its glide at once
   (it jumped to the end of its move: the jitter); untouched gliding fields restart from where they are.
 - (v0.9.11) Co-op ribbons (`coop_ribbons.lua`, ids from 201): a registry that defines `_G["rib<id>"]` (png from the mod's
