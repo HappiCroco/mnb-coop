@@ -510,6 +510,8 @@ local function clientPlaySounds(list)
                     if ev.i then
                         pcall(c.setLooping, c, true)
                         C.inst[ev.i] = c
+                        C.instName = C.instName or setmetatable({}, { __mode = "k" })
+                        C.instName[c] = ev.n
                     end
                     pcall(rawPlay, c)
                 end
@@ -517,6 +519,39 @@ local function clientPlaySounds(list)
         end
     end
 end
+
+-- client, every frame: a vehicle's engine and track loops get louder and quieter with how far
+-- the vehicle is from this player's camera. The game does it on the host every frame
+-- (vehicleSound, urb_engine.lua:21654-21693: `_G["opelIdle"..dude.id]:setVolume(gunScale(dude))`),
+-- but a loop starts before its first setVolume, so it reached teammates at the host's
+-- full volume and stayed there: "can hear the engine of my halftrack no matter where they
+-- are" (owner, 2026-11-13). The loop's name ends with its vehicle's id.
+local function updateLoopVolumes()
+    if not (C and C.inst and C.instName) or type(player) ~= "table" then return end
+    local scale = rawget(_G, "gunScale")
+    if type(scale) ~= "function" then return end
+    local byId = {}
+    for _, v in ipairs(type(player.deployedVehicles) == "table" and player.deployedVehicles or {}) do
+        if type(v) == "table" and v.id ~= nil then byId[tostring(v.id)] = v end
+    end
+    for _, c in pairs(C.inst) do
+        local name = C.instName[c]
+        local digits = type(name) == "string" and name:match("%d+$")
+        if digits then
+            -- (the id is the longest tail of digits that is a vehicle: "hvyTankIdle2" .. id)
+            local v
+            for k = 1, #digits do
+                v = byId[digits:sub(k)]
+                if v then break end
+            end
+            if v and type(v.x) == "number" and type(v.y) == "number" then
+                local ok, vol = pcall(scale, v)
+                if ok and type(vol) == "number" then pcall(c.setVolume, c, math.max(0, math.min(1, vol))) end
+            end
+        end
+    end
+end
+battle._updateLoopVolumes = updateLoopVolumes
 
 -- ---------------------------------------------------------------- image globals
 -- Some things the battle draw uses are globals the host sets while building the
@@ -1363,6 +1398,7 @@ function battle.clientUpdate(dt)
         return
     end
     battle.startBackground()
+    pcall(updateLoopVolumes) -- engines and tracks by distance from my camera
     local now = love.timer.getTime()
     -- which update I'm on, a few times a second: the host lowers its rate if I fall behind
     if C.lastN and now - (C.lagSentAt or 0) >= battle.LAG_REPORT then

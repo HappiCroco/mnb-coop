@@ -502,6 +502,30 @@ do
   net.seats, net.option = savedSeats, savedOption
 end
 
+-- a vehicle's engine loop on a teammate's screen: as loud as it is from their own camera,
+-- every frame (owner, 2026-11-13: "can hear the engine of my halftrack no matter where they are")
+do
+  local savedC = T.getClient()
+  local c = {}
+  T.setClient(c)
+  local savedScale, savedVeh = rawget(_G, "gunScale"), player.deployedVehicles
+  gunScale = function(d) return math.max(0, 1 - math.abs((d.x or 0) - 640) / 2000) end
+  local vol = {}
+  local function src() return { setVolume = function(s, v) vol[s] = v end } end
+  local idle, track, other = src(), src(), src()
+  player.deployedVehicles = { { id = 4415569038, tag = "halfTrack", x = 5000, y = 300 } }
+  c.inst = { [1] = idle, [2] = track, [3] = other }
+  c.instName = { [idle] = "opelIdle4415569038", [track] = "hvyTankIdle24415569038", [other] = "rainLoop" }
+  battle._updateLoopVolumes()
+  check(vol[idle] == 0 and vol[track] == 0, "an engine far from my camera is silent")
+  check(vol[other] == nil, "a loop that isn't a vehicle's is left alone")
+  player.deployedVehicles[1].x = 700
+  battle._updateLoopVolumes()
+  check(vol[idle] > 0.9, "and loud once it's near (" .. tostring(vol[idle]) .. ")")
+  gunScale, player.deployedVehicles = savedScale, savedVeh
+  T.setClient(savedC)
+end
+
 -- a thrown grenade on a teammate's screen lands on its spot and rolls off it, never flies on
 -- past it (owner, 2026-11-13: "they fly past target")
 do
