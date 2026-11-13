@@ -916,20 +916,21 @@ local function applyList(k, ld)
                 applyDelta(el, ed)
             elseif smooth then
                 local it = C.interp[el]
-                -- fields still moving that this snap doesn't touch: finish them
-                if it then
-                    for f, p in pairs(it) do
-                        if f ~= "t0" and ed[f] == nil then
-                            el[f] = p[2]
-                            it[f] = nil
-                        end
-                    end
-                end
                 local from
                 for f, v in pairs(ed) do
                     if type(v) == "number" and isInterpField(f) and type(el[f]) == "number" then
                         from = from or {}
                         from[f] = el[f]
+                    end
+                end
+                -- Fields still gliding that this snap doesn't touch keep gliding to where they
+                -- were going. (They used to be finished at once: any other change to a moving
+                -- soldier, his health, his animation, a y without an x, made him jump to the
+                -- end of his move. Owner, 2026-11-12: jitter at any rate.) When the glide
+                -- restarts below (new t0), they restart from where they are now.
+                if it and from then
+                    for f, p in pairs(it) do
+                        if f ~= "t0" and ed[f] == nil then it[f] = { el[f], p[2] } end
                     end
                 end
                 applyDelta(el, ed)
@@ -1068,6 +1069,7 @@ function battle.stopView(why)
     pcall(love.graphics.setBackgroundColor, 0, 0, 0) -- (the game's own, main.lua:4248)
     C = nil
     battle.viewing = false
+    battle.menuOpen = false
     buttons = {}
     mouseOverText = ""
     mouseOverId = -99 -- no soldier card left over from the host's battle
@@ -1262,17 +1264,92 @@ function battle.clientUpdate(dt)
     safeCall(screenControl, dt)
 end
 
--- Client: Esc twice within 3 s leaves the session.
-function battle.keypressed(key)
-    if key ~= "escape" then return end
-    local now = love.timer.getTime()
-    if battle.leaveAskedAt and now - battle.leaveAskedAt < 3 then
-        battle.leaveAskedAt = nil
-        battle.stopView("you left")
-        net.leave()
-    else
-        battle.leaveAskedAt = now
+-- ---------------------------------------------------------------- teammate's menu
+-- Esc (or F10) opens a small menu over the host's battle (owner, 2026-11-12: "allow the client
+-- to press ESC to open the menu, and then let them leave from there"). The battle goes on
+-- behind it: it is the host's. Clicks are taken here while it is open (mnb_coop_main.lua).
+battle.menuOpen = false
+local MENU_W, MENU_ROW, MENU_GAP = 360, 44, 10
+local MENU_ITEMS = {
+    { id = "resume", text = "Back to the battle" },
+    { id = "lobby", text = "Leave the battle (stay in the lobby)",
+        tip = "Your soldiers stay in the host's battle; you join the next one" },
+    { id = "quit", text = "Leave the co-op session", tip = "Disconnect from the host" },
+}
+
+local function menuRects()
+    local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+    local h = #MENU_ITEMS * (MENU_ROW + MENU_GAP) - MENU_GAP
+    local x, y = (sw - MENU_W) / 2, (sh - h) / 2 + 20
+    local out = {}
+    for i, it in ipairs(MENU_ITEMS) do
+        out[i] = { it = it, x = x, y = y + (i - 1) * (MENU_ROW + MENU_GAP), w = MENU_W, h = MENU_ROW }
     end
+    return out
+end
+
+function battle.openMenu(on)
+    battle.menuOpen = on and C ~= nil or false
+end
+
+-- a click (release) while the menu is open; returns true (the click is the menu's)
+function battle.menuClick(x, y)
+    if not battle.menuOpen then return false end
+    for _, r in ipairs(menuRects()) do
+        if x >= r.x and x <= r.x + r.w and y >= r.y and y <= r.y + r.h then
+            pcall(function() _G["weaponInspect" .. randNbr(5)]:clone():play() end)
+            battle.menuOpen = false
+            if r.it.id == "lobby" then
+                battle.stopView("you left the battle; you'll join the host's next one")
+            elseif r.it.id == "quit" then
+                battle.stopView("you left")
+                net.leave()
+            end
+            return true
+        end
+    end
+    return true -- a click outside the buttons does nothing (the menu stays)
+end
+
+local function drawMenu()
+    if not battle.menuOpen then return end
+    love.graphics.push("all")
+    love.graphics.origin()
+    local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+    love.graphics.setColor(0, 0, 0, 0.55)
+    love.graphics.rectangle("fill", 0, 0, sw, sh)
+    local big = cardFont or largeFont or love.graphics.getFont()
+    local small = nonoFont or love.graphics.getFont()
+    local rects = menuRects()
+    love.graphics.setFont(big)
+    love.graphics.setColor(1, 0.85, 0.4, 1)
+    love.graphics.printf("CO-OP", 0, rects[1].y - big:getHeight() - 16, sw, "center")
+    local mx, my = love.mouse.getPosition()
+    local tip
+    for _, r in ipairs(rects) do
+        local hot = mx >= r.x and mx <= r.x + r.w and my >= r.y and my <= r.y + r.h
+        if hot then tip = r.it.tip end
+        love.graphics.setColor(0.4, 0.4, 0.4, 0.95)
+        love.graphics.rectangle("fill", r.x, r.y, r.w, r.h)
+        love.graphics.setColor(hot and 0.6 or 0, hot and 0.1 or 0, hot and 0.1 or 0, 1)
+        love.graphics.setLineWidth(2)
+        love.graphics.rectangle("line", r.x, r.y, r.w, r.h)
+        love.graphics.setFont(small)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.printf(r.it.text, r.x, r.y + (r.h - small:getHeight()) / 2, r.w, "center")
+    end
+    if tip then
+        local last = rects[#rects]
+        love.graphics.setColor(0.85, 0.85, 0.85, 1)
+        love.graphics.printf(tip, 0, last.y + last.h + 14, sw, "center")
+    end
+    love.graphics.pop()
+end
+
+-- Client: Esc or F10 opens and closes the menu.
+function battle.keypressed(key)
+    if key ~= "escape" and key ~= "f10" then return end
+    battle.openMenu(not battle.menuOpen)
 end
 
 -- Client: the game's draw failed on the mirror (nil = this frame drew fine).
@@ -1365,25 +1442,25 @@ function battle.drawOverlay()
     -- (a draw error shows as an error pop-up, battle.noteDrawError)
     local font = nonoFont or love.graphics.getFont()
     local text = "WATCHING " .. C.hostName:upper() .. "'S BATTLE"
-    local sub = "Esc twice to leave"
+    local sub = "Esc: menu (leave the battle or the session)"
     -- the banner in battle: option watchBanner (owner, 2026-11-12: "a way to get rid of it")
-    -- 1 always, 2 fades after a few seconds (default), 3 hidden. It always shows when it has
-    -- something to say: on the mission report, and after a first Esc.
+    -- 1 always, 2 fades after a few seconds (default), 3 hidden. It always shows on the
+    -- mission report (it says how to leave it).
     local alpha = 1
-    local asked = battle.leaveAskedAt and love.timer.getTime() - battle.leaveAskedAt < 3
     if battle.inDebrief() then
         text = C.hostName:upper() .. "'S MISSION REPORT"
         sub = C.hostLeft and "The host has left the report. Back: return to the lobby"
             or "Back: return to the lobby whenever you like"
-    elseif asked then
-        sub = "Press Esc again to leave the co-op session"
     else
         local mode = tonumber(net.option("watchBanner", 2)) or 2
-        if mode == 3 then return end
+        if battle.menuOpen then mode = 3 end
         if mode == 2 then
             local t = love.timer.getTime() - (C.viewStartAt or 0)
             alpha = math.max(0, math.min(1, BANNER_SHOWN + 1 - t))
-            if alpha <= 0 then return end
+        end
+        if mode == 3 or alpha <= 0 then
+            drawMenu()
+            return
         end
     end
     love.graphics.push("all")
@@ -1398,6 +1475,7 @@ function battle.drawOverlay()
     love.graphics.setColor(0.85, 0.85, 0.85, alpha)
     love.graphics.printf(sub, x, 13 + font:getHeight(), w, "center")
     love.graphics.pop()
+    drawMenu()
 end
 
 -- ---------------------------------------------------------------- save safety

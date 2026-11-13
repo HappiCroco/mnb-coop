@@ -314,10 +314,13 @@ end
 -- Battle HUD pass: number keys follow your own soldiers in co-op (coop_squad.lua).
 local coopButtonEngine = buttonEngine
 squad.setGameButtonEngine(coopButtonEngine) -- teammates build their HUD buttons with it
+local coopAddPauseLobby = function() end -- set further down (the pause menu's BACK TO LOBBY)
 function buttonEngine(...)
     local result = coopButtonEngine(...)
     local ok, err = pcall(squad.hostAfterButtonEngine)
     if not ok then print("[mnb_coop] squad keys: " .. tostring(err)) end
+    local okp, errp = pcall(coopAddPauseLobby) -- the host's BACK TO LOBBY in the pause menu
+    if not okp then print("[mnb_coop] pause menu: " .. tostring(errp)) end
     return result
 end
 
@@ -395,7 +398,8 @@ local function onKeypressed(key, ...)
     -- G: give TP to the next player (Classic wallets, coop_wallet.lua)
     if key == wallet.GIVE_KEY and wallet.keypressed(key) then return end
     if battle.viewing then
-        -- teammate in the host's battle: own selection keys, own view keys, Esc twice to leave
+        -- teammate in the host's battle: own selection keys, own view keys, Esc for the menu
+        if key == "escape" or key == "f10" then return battle.keypressed(key) end
         local ok, used = pcall(squad.clientKeypressed, key)
         if ok and used then return end
         if VIEW_KEYS[key] then
@@ -432,18 +436,71 @@ coopKeyreleased = qmInput.wrap("keyreleased", function() return onKeyreleased en
 -- teammates' H and Alt release are run through the game's own key handlers
 squad.setGameKeys(coopKeypressed, coopKeyreleased)
 
--- Pause > Options saves and leaves the battle (urb_engine.lua:45012): not while teammates are in it.
+-- Pause > Options saves and leaves the battle (urb_engine.lua:45012): with teammates in the
+-- battle it stays closed (it would drop everyone on the options page); BACK TO LOBBY, below,
+-- is the way out.
 local coopPauseOption = pause_optionButton
 function pause_optionButton(...)
     if net.role == "host" and net.playerCount() > 1 and type(player) == "table" and player.gameState == 0 then
-        -- the game's own battle announcement, and its "can't" sound
-        if not pcall(anounceStuff, "Options are closed while teammates are in the battle") then
-            mnbCoop.notice("Options are closed while teammates are in the battle")
-        end
+        local text = "Options are closed while teammates are in the battle: use Back to lobby"
+        if not pcall(anounceStuff, text) then mnbCoop.notice(text) end
         pcall(function() poop:clone():play() end)
         return
     end
     if coopPauseOption then return coopPauseOption(...) end
+end
+
+-- BACK TO LOBBY: a fifth entry in the host's pause menu while teammates are in the battle
+-- (owner, 2026-11-12: "there's no way to return back to the multiplayer screen", then "why
+-- not add a new option instead of using the options button?"). It does what the game's
+-- Options does (saves the battle so it can be carried on later, and puts the profile back),
+-- then everyone lands in the lobby: the teammates' view ends with the battle.
+-- The game's pause items are at y 420/480/540/600, centred (drawFiles.lua:1676-1704).
+local PAUSE_LOBBY_Y = 660
+local PAUSE_LOBBY_TEXT = "Back to lobby"
+
+local function pauseLobbyShown()
+    return net.role == "host" and net.playerCount() > 1 and not battle.viewing and type(player) == "table"
+        and player.gameState == 0 and pause == 1 and (tonumber(rawget(_G, "quitConfirm")) or 0) == 0
+end
+
+local function pauseLobbyRect()
+    local font = bigFont or love.graphics.getFont()
+    local w = font:getWidth(PAUSE_LOBBY_TEXT)
+    return 640 - w / 2, PAUSE_LOBBY_Y - 2, w, 28
+end
+
+function coopPauseLobbyButton()
+    if not pauseLobbyShown() then return end
+    if coopPauseOption then coopPauseOption() end -- the game's save-and-leave
+    pause = 0
+    menuPage = lobby.getPage()
+    mouseOverText = ""
+    net.status = "The battle is saved; everyone is back in the lobby"
+end
+
+function coopAddPauseLobby()
+    if not pauseLobbyShown() then return end
+    local x, y, w, h = pauseLobbyRect()
+    buttons[#buttons + 1] = Button.new(x + (player.screenx or 0), y + (player.screeny or 0), w, h, "coopPauseLobby",
+        "active", true, "Saves the battle (carry it on later) and takes everyone back to the co-op lobby")
+end
+
+local function drawPauseLobby()
+    if not pauseLobbyShown() then return end
+    local x, y, w, h = pauseLobbyRect()
+    local mx, my = love.mouse.getPosition()
+    local hot = mx > x and mx < x + w and my > y and my < y + h
+    love.graphics.push("all")
+    love.graphics.origin()
+    love.graphics.setFont(bigFont or love.graphics.getFont())
+    love.graphics.setColor(1, 1, 1, 1)
+    local black = { 0, 0, 0, 1 }
+    for _, d in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+        love.graphics.printf({ black, PAUSE_LOBBY_TEXT }, d[1], PAUSE_LOBBY_Y + d[2], 1280, "center")
+    end
+    love.graphics.printf({ hot and { 0.8, 0.15, 0.15, 1 } or { 1, 1, 1, 1 }, PAUSE_LOBBY_TEXT }, 0, PAUSE_LOBBY_Y, 1280, "center")
+    love.graphics.pop()
 end
 
 local coopDraw = love.draw
@@ -460,6 +517,8 @@ function love.draw(...)
         battle.noteDrawError(not ok and err or nil)
     else
         coopDraw(...)
+        local okp, errp = pcall(drawPauseLobby)
+        if not okp then print("[mnb_coop] pause menu: " .. tostring(errp)) end
     end
     local okf, errf = pcall(squad.drawFaceFrames)
     if not okf then print("[mnb_coop] face frames: " .. tostring(errf)) end
@@ -476,6 +535,7 @@ end
 local coopMousepressed
 local function onMousepressed(x, y, button, ...)
     if battle.viewing then
+        if battle.menuOpen then return end -- the teammate's Esc menu takes the click (on release)
         pcall(squad.clientMousepressed, x, y, button)
         return
     end
@@ -494,6 +554,10 @@ end
 local coopMousereleased
 local function onMousereleased(x, y, button, ...)
     if battle.viewing then
+        if battle.menuOpen then
+            pcall(battle.menuClick, x, y)
+            return
+        end
         local ok, err = pcall(squad.clientMousereleased, x, y, button)
         if not ok then print("[mnb_coop] order: " .. tostring(err)) end
         return
