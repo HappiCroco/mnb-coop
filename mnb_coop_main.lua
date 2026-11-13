@@ -463,6 +463,21 @@ function weaponFiring(idz, ...)
         t.targetPointer = 0 -- (the game's "no target", ai.lua:2730)
         return
     end
+    -- a gunner (MG) switches to a random entry of his targetOpportunities inside weaponFiring
+    -- (urb_engine.lua:9673) after the check above: an entry of 0 or below crashed the same line
+    -- again (owner, 2026-11-12, 1.2.1). Those entries go; with none left he keeps his target.
+    if type(t) == "table" and t.spec == "gunner" and type(t.targetOpportunities) == "table" then
+        local opp, bad = t.targetOpportunities, false
+        for i = #opp, 1, -1 do
+            if (tonumber(opp[i]) or 0) <= 0 then table.remove(opp, i) bad = true end
+        end
+        if #opp == 0 then opp[1] = t.targetPointer end
+        if bad and not loggedBadTarget then
+            loggedBadTarget = true
+            print(string.format("[mnb_coop] gunner %s (%s) had a target id <= 0 among his targets; dropped",
+                tostring(t.name), tostring(t.faction)))
+        end
+    end
     return coopWeaponFiring(idz, ...)
 end
 
