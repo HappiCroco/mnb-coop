@@ -193,13 +193,16 @@ check(campaign.sanitize({ spec = "hacker" }).spec == "", "an unknown spec become
 weaponCreator = savedWC
 spec_medic, spec_, allied_idle, face_eyes2, perk_1, perk_2, award5 = nil, nil, nil, nil, nil, nil, nil
 
--- ---- New war: day 1 again, the six soldiers come along
+-- ---- New war: day 1 again, the six soldiers and the career come along
 player.dayz, player.gainz = 30, 25
+player.rank, player.experience, player.skill, player.ribs, player.mnb2Rank = 5, 9000, { { id = 7 } }, { 3, 4 }, 2
 local uids = {}
 for i = 1, 6 do uids[i] = T()[i].coopUid end
 local xpBefore = T()[3].xp
 check(campaign.newWar(), "new war")
 check(player.gainz == 1 and player.dayz == 1 and player.gameState == 1, "back at day 1")
+check(player.rank == 5 and player.experience == 9000 and player.skill[1].id == 7 and #player.ribs == 2 and player.mnb2Rank == 2,
+  "the career stays: rank, XP, abilities, ribbons, Classic rank")
 check(T()[1].coopUid == uids[1] and T()[6].coopUid == uids[6] and T()[3].xp == xpBefore, "the six soldiers came along with their XP")
 local backup = false
 for _, f in ipairs(love.filesystem.getDirectoryItems("coop/campaign")) do if f:match("%.war%d+$") then backup = true end end
@@ -212,6 +215,18 @@ local uid1 = T()[1].coopUid
 player.dayz, player.gainz = 9, 7
 check(campaign.newWar(), "new war from a save with a mission under way")
 check(player.coopMission == nil and player.gainz == 1 and T()[1].coopUid == uid1, "mission closed, day 1, soldiers kept")
+-- new career: rank and ribbons start over, the war and the soldiers stay
+player.dayz, player.gainz = 12, 9
+check(campaign.restart("career"), "new career")
+check(player.dayz == 12 and player.gainz == 9 and T()[1].coopUid == uid1, "new career: the war and soldiers stay")
+check((player.rank or 0) == 0 and (player.experience or 0) == 0 and #(player.ribs or {}) == 0 and (player.mnb2Rank or 0) == 0,
+  "new career: rank, XP, ribbons, Classic rank start over")
+-- new squad: six rookies, the war and the career stay
+player.rank = 4
+check(campaign.restart("squad"), "new squad")
+local anyOld = false
+for i = 1, 6 do if T()[i] and T()[i].coopUid == uids[i] then anyOld = true end end
+check(not anyOld and #T() >= 6 and player.dayz == 12 and player.rank == 4, "new squad: new soldiers, war and career stay")
 -- fresh start: day 1 with new rookies
 check(campaign.newWar(true), "fresh start")
 local sameAny = false

@@ -958,59 +958,119 @@ function campaign.restoreVeterans(stash)
 end
 
 -- =============================================================================
--- NEW WAR (owner's rule): day, sector, career and ribbons start over; the six
--- soldiers stay with their levels. The old save is kept as a backup file. Safe
--- because the new war starts under the day 1 cap again.
--- freshStart = true: a full reset, the six soldiers are new rookies too.
+-- RESTARTS (owner, 2026-11-12: "new war, new career, new squad, and then fresh start")
+--   "war"    back to D-Day: the day, sector and map progress (a new profile), keeping the
+--            career and the six soldiers with their levels (the day 1 XP cap applies again);
+--   "career" rank, XP, skill credits, commander abilities, the career scores, ribbons and
+--            the co-op Classic rank (its save too) start over; the war and soldiers stay;
+--   "squad"  six new rookies; the war and the career stay;
+--   "fresh"  all of it.
+-- The old save is kept as a backup file first (coop/campaign/saveMNB3.lua.<kind><time>).
+-- A mission still under way in the save is abandoned first: soldiers go home as after any.
+-- The career is what the game's Career page shows (drawFiles.lua:2740) plus the Classic
+-- scores the game copies between Classic and the profile (mnb2.lua:1158-1186) and ours.
 -- =============================================================================
-function campaign.newWar(freshStart)
-    if not campaign.active then return false, "open your co-op save first" end
-    campaign.track()
-    local p = campaign.profile
-    if type(p) ~= "table" then return false, "no co-op save" end
-    if type(p.coopMission) == "table" then
-        -- a mission still under way in this save (the game was left mid-battle): it's
-        -- abandoned, everyone's soldiers go home first as after any mission. (This used to
-        -- refuse with "finish the mission first", which read as New war doing nothing.)
-        campaign.settleMission()
-        p = campaign.profile
-        if type(p) ~= "table" or type(p.coopMission) == "table" then return false, "could not close the mission under way" end
+campaign.CAREER_KEYS = {
+    "rank", "experience", "skillCredit", "skill", "ribs", "lastRib",
+    "tacticCareer", "maneuveringCareer", "fireCareer", "aggressionCareer",
+    "mnb2Rank", "mnb2Experience", "totalMNB2Game", "mnb2vcGames", "mnb2VCWave", "mnb2vcDeploy",
+    "maxWave", "avWave", "waveSum", "wings", "paraChallengeCredit", "paraFight", "mnb2LeftOverTp",
+    "mnb2lifeTimeSum", "mnb2OrdinanceDroppedTotal", "mnb2OrdinanceRecievedTotal",
+    "trenchModeXP", "trenchModeXPGain", "trenchModeStrike", "trenchSkill",
+    "coopStats",
+}
+
+local function copyKeys(from, to, keys)
+    for _, k in ipairs(keys) do
+        local v = from[k]
+        to[k] = type(v) == "table" and copyData(v, 0) or v
     end
-    campaign.normalize(p)
-    local keep = {}
-    if not freshStart then
-        for i = 1, 6 do keep[i] = p.deployedTroops[i] end
-    end
-    -- the war that ends is kept as a backup
-    local data = serialize(p)
-    if data then pcall(realFs.write, REDIRECT["saveMNB3.lua"] .. ".war" .. os.time(), data) end
+end
+
+-- a brand-new profile (the game's own newProfile), settings carried over from `old`
+local function blankProfile(old)
     local fresh = asPlayer({}, function()
         newProfile()
         return player
     end)
-    if type(fresh) ~= "table" then return false, "could not start a new war" end
-    fresh.bloop = p.bloop or 0
+    if type(fresh) ~= "table" then return nil end
+    fresh.bloop = old.bloop or 0
     local updated = asPlayer(fresh, function()
         updateProfile(player)
         return player
     end)
     if type(updated) == "table" then fresh = updated end
     fresh.coopCampaign = 1
-    copySettings(p, fresh)
+    copySettings(old, fresh)
     campaign.normalize(fresh)
-    for i = 1, 6 do
-        if type(keep[i]) == "table" then
-            untag(keep[i])
-            fresh.deployedTroops[i] = keep[i]
-        end
+    return fresh
+end
+
+-- the co-op Classic save goes aside (a fresh Classic rank next time)
+local function resetClassicSave()
+    local path = campaign.classic.DIR .. "/saveMNB2.lua"
+    local data = realFs.getInfo(path) and realFs.read(path)
+    if data then
+        pcall(realFs.write, path .. ".old" .. os.time(), data)
+        pcall(realFs.remove, path)
     end
-    fresh.gameState = 1
-    player = fresh
-    campaign.profile = fresh
+end
+
+function campaign.restart(kind)
+    if not campaign.active then return false, "open your co-op save first" end
+    campaign.track()
+    local p = campaign.profile
+    if type(p) ~= "table" then return false, "no co-op save" end
+    if type(p.coopMission) == "table" then
+        campaign.settleMission()
+        p = campaign.profile
+        if type(p) ~= "table" or type(p.coopMission) == "table" then return false, "could not close the mission under way" end
+    end
+    campaign.normalize(p)
+    local data = serialize(p)
+    if data then pcall(realFs.write, REDIRECT["saveMNB3.lua"] .. "." .. kind .. os.time(), data) end
+
+    local result = p
+    if kind == "war" or kind == "fresh" then
+        local fresh = blankProfile(p)
+        if not fresh then return false, "could not start a new war" end
+        if kind == "war" then
+            copyKeys(p, fresh, campaign.CAREER_KEYS)
+            for i = 1, 6 do
+                local s = p.deployedTroops[i]
+                if type(s) == "table" then
+                    untag(s)
+                    fresh.deployedTroops[i] = s
+                end
+            end
+        else
+            resetClassicSave()
+        end
+        result = fresh
+    elseif kind == "career" then
+        local blank = blankProfile(p)
+        if not blank then return false, "could not start a new career" end
+        copyKeys(blank, p, campaign.CAREER_KEYS)
+        resetClassicSave()
+    elseif kind == "squad" then
+        for i = 1, 6 do
+            local s = asPlayer(p, newSoldier)
+            if type(s) == "table" then p.deployedTroops[i] = s end
+        end
+    else
+        return false, "unknown restart"
+    end
+    result.gameState = 1
+    player = result
+    campaign.profile = result
     campaign.save()
-    print(freshStart and "[mnb_coop] fresh start: day 1 with six new rookies"
-        or "[mnb_coop] new war: back to day 1, the six soldiers come along")
+    print("[mnb_coop] restart: " .. kind)
     return true
+end
+
+-- (the older call: freshStart = everything, else the war)
+function campaign.newWar(freshStart)
+    return campaign.restart(freshStart and "fresh" or "war")
 end
 
 -- Control follows the slot (owner's rule): whoever stands in squad slot i belongs to

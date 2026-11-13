@@ -360,12 +360,12 @@ function lobby.registerButtons()
             and "Brief and start the next mission, for everyone in the lobby"
             or "The host starts the missions. You'll be pulled in when the battle begins.")
         addButton(32, 686, 80, 30, "coopHubBack", "Back to the Multiplayer screen")
-        addButton(1060, 686, 170, 30, "coopHubNewWar", lobby.newWarArmed()
-            and "Click again to start a NEW WAR now"
-            or "Start the war over at D-Day: day, sector, career and ribbons reset.\nYour six soldiers come along with their levels. The old war is kept as a backup.")
-        addButton(860, 686, 170, 30, "coopHubFreshStart", lobby.freshArmed()
-            and "Click again to start over with NEW ROOKIES now"
-            or "Full reset: like New war, but your six soldiers are replaced by new rookies.\nThe old war is kept as a backup.")
+        local at = lobby.RESTART_AT
+        for i, r in ipairs(lobby.RESTARTS) do
+            addButton(at.x0 + (i - 1) * at.w, at.y, at.w - 10, 30, "coopRestart_" .. r.kind,
+                lobby.restartArmed(r.kind) and ("Click again: " .. r.label:upper() .. " now")
+                or (r.tip .. "\nThe old save is kept as a backup."))
+        end
         return
     end
     if menuPage == lobby.getRoomPage() then
@@ -588,52 +588,44 @@ function coopHubBackButton()
     menuPage = lobby.getPage() -- the Multiplayer screen; Back there leaves co-op
 end
 
--- New war needs two clicks within 3 seconds
-lobby.newWarAt = nil
-function lobby.newWarArmed()
-    return lobby.newWarAt ~= nil and love.timer.getTime() - lobby.newWarAt < 3
+-- The four restarts (campaign.restart), on the co-op page's header line: high on the screen,
+-- so their tooltips have room below (owner, 2026-11-12: on the bottom bar they ran off the
+-- screen). Each needs two clicks within 3 seconds.
+lobby.RESTARTS = {
+    { kind = "war", label = "New war", done = "New war: back to D-Day, your career and soldiers came along",
+        tip = "Back to D-Day: the day, sector and map start over.\nYour career, ribbons and soldiers stay." },
+    { kind = "career", label = "New career", done = "New career: rank, abilities and ribbons start over",
+        tip = "Your rank, XP, commander abilities, ribbons and co-op Classic rank start over.\nThe war and your soldiers stay." },
+    { kind = "squad", label = "New squad", done = "New squad: six new rookies",
+        tip = "Six new rookies replace your soldiers.\nThe war and your career stay." },
+    { kind = "fresh", label = "Fresh start", done = "Fresh start: everything starts over",
+        tip = "Everything starts over: the war, your career, your Classic rank and your soldiers." },
+}
+lobby.RESTART_AT = { x0 = 590, y = 128, w = 160 } -- (each label is w - 10 wide)
+lobby.restartKind, lobby.restartAt = nil, 0
+
+function lobby.restartArmed(kind)
+    return lobby.restartKind == kind and love.timer.getTime() - lobby.restartAt < 3
 end
 
-function coopHubNewWarButton()
+local function restartClick(r)
     click()
-    if not lobby.newWarArmed() then
-        lobby.newWarAt = love.timer.getTime()
+    if not lobby.restartArmed(r.kind) then
+        lobby.restartKind, lobby.restartAt = r.kind, love.timer.getTime()
         return
     end
-    lobby.newWarAt = nil
-    local ok, why = campaign.newWar()
-    if ok then
-        menuPage = lobby.getHubPage()
-        if mnbCoop and mnbCoop.notice then mnbCoop.notice("New war: day 1, your soldiers came along") end
-    elseif mnbCoop and mnbCoop.notice then
-        mnbCoop.notice("New war: " .. tostring(why))
-    end
+    lobby.restartKind = nil
+    local ok, why = campaign.restart(r.kind)
+    if mnbCoop and mnbCoop.notice then mnbCoop.notice(ok and r.done or (r.label .. ": " .. tostring(why))) end
+    if ok then menuPage = lobby.getHubPage() end
     mouseOverText = ""
 end
-
--- Fresh start (full reset: new rookies too), also two clicks within 3 seconds
-lobby.freshAt = nil
-function lobby.freshArmed()
-    return lobby.freshAt ~= nil and love.timer.getTime() - lobby.freshAt < 3
+for _, r in ipairs(lobby.RESTARTS) do
+    _G["coopRestart_" .. r.kind .. "Button"] = function() restartClick(r) end
 end
-
-function coopHubFreshStartButton()
-    click()
-    if not lobby.freshArmed() then
-        lobby.freshAt = love.timer.getTime()
-        lobby.newWarAt = nil
-        return
-    end
-    lobby.freshAt = nil
-    local ok, why = campaign.newWar(true)
-    if ok then
-        menuPage = lobby.getHubPage()
-        if mnbCoop and mnbCoop.notice then mnbCoop.notice("Fresh start: day 1 with six new rookies") end
-    elseif mnbCoop and mnbCoop.notice then
-        mnbCoop.notice("Fresh start: " .. tostring(why))
-    end
-    mouseOverText = ""
-end
+-- (older names)
+function coopHubNewWarButton() restartClick(lobby.RESTARTS[1]) end
+function coopHubFreshStartButton() restartClick(lobby.RESTARTS[4]) end
 
 -- Co-op Classic (coop_defense.lua): the game's Classic, with the defense layout
 function coopClassicButton()
@@ -990,12 +982,14 @@ local function drawHub()
         end
     end
     outlined("Back", 50, 685, 100, "left", bigFont, hovered(32, 686, 80, 30) and RED or LIGHT)
-    local armed = lobby.newWarArmed()
-    outlined(armed and "Sure? Click again" or "New war", 1060, 685, 170, "right", bigFont,
-        (armed or hovered(1060, 686, 170, 30)) and RED or DIM)
-    local freshArmed = lobby.freshArmed()
-    outlined(freshArmed and "Sure? Click again" or "Fresh start", 860, 685, 170, "right", bigFont,
-        (freshArmed or hovered(860, 686, 170, 30)) and RED or DIM)
+    -- the restarts, on the header line
+    local at = lobby.RESTART_AT
+    for i, r in ipairs(lobby.RESTARTS) do
+        local bx = at.x0 + (i - 1) * at.w
+        local armed = lobby.restartArmed(r.kind)
+        outlined(armed and "Sure? Click again" or r.label, bx, at.y + 2, at.w - 10, "right", bigFont,
+            (armed or hovered(bx, at.y, at.w - 10, 30)) and RED or DIM)
+    end
     love.graphics.setColor(1, 1, 1, 1)
 end
 
