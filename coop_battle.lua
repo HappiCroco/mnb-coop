@@ -549,7 +549,7 @@ local function clientPlaySounds(list)
                 pcall(rawStop, c)
                 C.inst[ev.s] = nil
             end
-        elseif type(ev.n) == "string" then
+        elseif type(ev.n) == "string" and not (ev.i and C.inst[ev.i]) then -- (already playing here)
             local base = rawget(_G, ev.n)
             if type(base) == "userdata" then
                 local ok, c = pcall(rawClone, base)
@@ -781,9 +781,47 @@ local function hostScanSpawns()
     end
 end
 
+-- host: the loops and long sounds playing right now. The game starts the battle's background
+-- (bgSound, night, rain, the river, the beach's explosions, the landing boat, the intro tune:
+-- urb_engine.lua:40350-40393, mnb2.lua:369-382) while it sets the battle up, before the sync
+-- starts, so they never reached teammates as they were played (sync audit 2026-11-13; Classic's
+-- background loop had its own fix, startBackground, which this replaces). Sent with the
+-- battle's first full state, and to anyone joining later.
+local function playingSounds()
+    local list = {}
+    for src, name in pairs(nameOf) do
+        local okp, playing = pcall(src.isPlaying, src)
+        if okp and playing and #list < 32 then
+            local okl, looping = pcall(src.isLooping, src)
+            looping = okl and looping
+            local okd, dur = pcall(src.getDuration, src)
+            if looping or LONG_SOUNDS[name] or (okd and type(dur) == "number" and dur > 4) then
+                if not instId[src] then
+                    nextInst = nextInst + 1
+                    instId[src] = nextInst
+                end
+                local okv, vol = pcall(src.getVolume, src)
+                local okpi, pitch = pcall(src.getPitch, src)
+                local ev = { n = name, v = okv and q(vol) or 1, p = okpi and q(pitch) or 1, i = instId[src] }
+                if looping then ev.l = 1 end
+                local place = soundPlace[src]
+                if place then
+                    ev.k, ev.x, ev.y, ev.f = place.k, math.floor(place.x + 0.5), math.floor(place.y + 0.5), q(place.f)
+                end
+                list[#list + 1] = ev
+            end
+        end
+    end
+    return list
+end
+
 local function fullMessage(st)
     local msg = capture(st)
     msg.t = "bfull"
+    if battle.soundHooked then
+        local ok, snd = pcall(playingSounds)
+        if ok and #snd > 0 then msg.snd = snd end
+    end
     msg.sp = spawnContents()
     msg.cam = { player.masterScreenx or player.screenx or 0, player.masterScreeny or player.screeny or 0 }
     msg.img = imageGlobals({}, true)
@@ -1360,6 +1398,78 @@ local function moveParticles(list, dt)
     end
 end
 
+-- Weather: each machine keeps its own rain, floating fluff and dark clouds (LOCAL above: they
+-- follow the camera), but the game only makes them when a mission starts (bcChecks.lua:856-898)
+-- and moves them in its battle update (drawFiles.lua:1947-2027), neither of which a teammate
+-- runs: their sky was clear in the rain (sync audit 2026-11-13). The same, on their own camera.
+local function weatherUpdate(dt)
+    local p = player
+    local sx, sy = tonumber(p.screenx) or 0, tonumber(p.screeny) or 0
+    local many = tonumber(p.option_maxParticles) or 1
+    local R = love.math.random
+    if p.bcModRain == 1 then
+        local rain = p.rainParticles
+        if type(rain) ~= "table" then rain = {} p.rainParticles = rain end
+        if #rain == 0 then
+            for _ = 1, 10 + many * 50 do
+                rain[#rain + 1] = { frame = R(1, 11), x = sx + R(1, 3600) - 1800, y = R(1, 720), alpha = 200, timer = R(1, 5) / 100 }
+            end
+        end
+        for _, d in ipairs(rain) do
+            d.timer = d.timer + dt
+            if d.timer >= 0.04 then d.timer, d.frame = 0, d.frame + 1 end
+            if d.frame > 16 then d.frame, d.x, d.y = 1, sx + R(1, 3600) - 1800, R(1, 1320) - 300 end
+        end
+    end
+    if p.fluff == 1 then
+        local fluff = p.fluffBalls
+        if type(fluff) ~= "table" then fluff = {} p.fluffBalls = fluff end
+        local function fresh(b)
+            b.rotation, b.timer, b.scale = math.rad(R(1, 360)), R(1, 60), R(1, 20)
+            b.drag, b.alpha = 200 - ((20 - b.scale) * 5), R(1, 200) + 10
+        end
+        if #fluff == 0 then
+            for _ = 1, 10 + many * 10 do
+                local b = { x = sx + R(1, 1280), y = R(1, 720) }
+                fresh(b)
+                fluff[#fluff + 1] = b
+            end
+        end
+        local clock = tonumber(rawget(_G, "fluffClock")) or 0
+        for _, b in ipairs(fluff) do
+            local redraw = false
+            b.timer = b.timer - dt
+            if b.timer < 0 then redraw, b.x, b.y = true, sx + R(1, 1280), sy + R(1, 720) end
+            if b.x < sx then
+                redraw = true
+                if clock > 0 then b.x, b.y = sx + 1275, sy + R(1, 720) else b.x, b.y = sx + R(1, 1280), sy + R(1, 720) end
+            elseif b.x > sx + 1280 then
+                redraw = true
+                if clock > 0 then b.x, b.y = sx + 5, sy + R(1, 720) else b.x, b.y = sx + R(1, 1280), sy + R(1, 720) end
+            end
+            b.rotation = b.rotation + (R(1, 7) - 4) / 100
+            b.x = b.x - math.sin(b.rotation) * ((100 - b.drag) / 20) * dt
+            b.y = b.y + math.cos(b.rotation) * ((100 - b.drag) / 20) * dt
+            if redraw then fresh(b) end
+        end
+    end
+    if p.bcModDarkClouds == 1 then
+        local clouds = p.clouds
+        if type(clouds) ~= "table" then clouds = {} p.clouds = clouds end
+        if #clouds == 0 then
+            for _ = 1, 15 + many * 5 do
+                clouds[#clouds + 1] = { type = R(1, 4), speed = R(1, 10), x = sx + R(1, 1500) - 750, y = R(1, 1020) - 300 }
+            end
+        end
+        for _, c in ipairs(clouds) do
+            c.x = c.x - c.speed * dt
+            if c.x < sx - 1300 then c.x, c.y = sx + R(1, 750) + 1280, R(1, 870) - 150 end
+            if c.x > sx + 2000 then c.x, c.y = sx - (R(1, 749) + 500), R(1, 870) - 150 end
+        end
+    end
+end
+battle._weatherUpdate = weatherUpdate
+
 -- water and mine ripples: grow, then go (particlesSystem.lua:6516-6528)
 local function moveCircles(list, dt)
     if type(list) ~= "table" then return end
@@ -1513,7 +1623,6 @@ function battle.clientUpdate(dt)
         player.screenx, player.screeny = 0, 0 -- its timers and fades come from the host
         return
     end
-    battle.startBackground()
     pcall(updateLoopVolumes) -- engines and tracks by distance from my camera
     local now = love.timer.getTime()
     -- which update I'm on, a few times a second: the host lowers its rate if I fall behind
@@ -1544,6 +1653,8 @@ function battle.clientUpdate(dt)
     moveParticles(player.topParticles, dt)
     moveCircles(player.waterCircles, dt)
     moveCircles(player.mineCircles, dt)
+    local okw, errw = pcall(weatherUpdate, dt)
+    if not okw then log("weather: %s", tostring(errw)) end
     -- selection ring pulse (the game animates it in its battle update)
     if type(selectCircle) == "number" then
         if selectCircleUp == 1 then

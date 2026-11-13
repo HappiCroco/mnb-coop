@@ -21,6 +21,7 @@ Four Haiku search agents, one per area. Each finding was checked against the cod
 | `ddayExploLoop` (distant beach explosions) gets quieter as the camera moves right | `urb_engine.lua:6466` | **Fixed**: worked out from the teammate's own camera |
 | The game stops all sounds at a battle's end; teammates still on the report kept their loops | `urb_engine.lua:5684, 5711` | **Fixed**: `love.audio.stop()` on the host sends a stop-all (event `sa`) |
 | A loop played again while still tracked would leave the teammate's old copy playing | mod | **Fixed**: the old copy gets a stop first |
+| The battle's background sounds (background loop, night, rain, river, beach explosions, landing boat, intro tune) start while the game sets the battle up, before the sync starts: teammates never got them (only Classic's background loop had a fix) | `urb_engine.lua:40350-40393`, `mnb2.lua:369-382` | **Fixed**: the first full state, and a joiner's, carries every loop and long sound playing on the host (`playingSounds`) |
 | `bgSound`, `rainSound`, `riverSound`: fixed volume | `main.lua:62-90` | Fine |
 | No `love.audio.play`, `:pause`, `:seek` in battle code; every sound goes through `Source:play` | | Fine |
 
@@ -68,9 +69,14 @@ On a teammate's screen, particles are moved by our own mover (`moveParticles`, `
 | Trails (smoke behind rifle grenades) | | Fine: they're new particles, sent by the host |
 | Shells, tracers, bombs: no target, they stop by drag | | Fine: the mover has drag |
 
+### Weather
+
+| Finding | Where | Status |
+|---|---|---|
+| Rain, floating fluff and dark clouds are made when a mission starts and moved in the battle update; each machine keeps its own (they follow the camera), so teammates had a clear sky | made `bcChecks.lua:856-898`, moved `drawFiles.lua:1947-2027` | **Fixed**: `weatherUpdate` makes and moves them on the teammate's camera |
+
 ## Not covered yet (ideas for the next pass)
 
 - Projectiles passing through walls (above).
-- Whether every `player.deco` append reaches teammates (props, flare marks).
-- Weather lists (rain, snow, clouds, fluff): drawn from `player.*`, animated in `runTime0`, which teammates don't run.
+- `player.deco` is a synced list, so props and flare marks should arrive; not checked in a game.
 - Responsiveness: instant local feedback for a teammate's clicks; unreliable battle updates (the planned network rework).

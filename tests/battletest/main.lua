@@ -556,6 +556,19 @@ do
   check(#ml == 0, "a molotov bursts where it lands")
 end
 
+-- weather on a teammate's screen: made and moved on their own camera (sync audit 2026-11-13)
+do
+  local saved = player
+  player = { screenx = 1000, screeny = 0, option_maxParticles = 1, bcModRain = 1, fluff = 1, bcModDarkClouds = 1,
+    rainParticles = {}, fluffBalls = {}, clouds = {} }
+  battle._weatherUpdate(1 / 60)
+  check(#player.rainParticles == 60 and #player.fluffBalls == 20 and #player.clouds == 20, "rain, fluff and clouds appear")
+  local cx = player.clouds[1].x
+  for _ = 1, 60 do battle._weatherUpdate(1 / 60) end
+  check(player.clouds[1].x < cx or player.clouds[1].x > 2000, "and the clouds drift")
+  player = saved
+end
+
 -- flashes and banners kept in the game's globals reach teammates (sync audit 2026-11-13)
 do
   lightningFlash, ambientLight, ambientLightFlash, majorTimer, majorEvent = 0, 0, 0, 0, nil
