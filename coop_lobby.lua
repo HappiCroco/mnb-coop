@@ -235,7 +235,15 @@ function lobby.updateRoom()
     local battle = mnbCoop and mnbCoop.battle
     if battle and battle.viewing then return end -- the battle has begun (or a report is still open)
     if lobby.room then
-        if net.role ~= "host" then closeRoom(lobby.room.back) end
+        if net.role ~= "host" then
+            closeRoom(lobby.room.back)
+        elseif menuPage ~= room then
+            -- the host left the room another way (Back, Esc, the main menu): it's closed for
+            -- everyone, nobody stays in it, and the READYs given in it are gone (otherwise the
+            -- next start goes straight through: owner, 2026-11-12, "it skips the ready")
+            closeRoom(nil)
+            net.resetReady()
+        end
         return
     end
     if net.role == "client" and net.stage then
@@ -633,7 +641,10 @@ function coopClassicButton()
         if mnbCoop and mnbCoop.notice then mnbCoop.notice("Only the host starts battles") end
         return
     end
-    -- (READY is asked once the host picks a mode: the ready room, lobby.gate)
+    -- READY is asked once the host picks a mode (the ready room, lobby.gate). A battle under
+    -- way in the co-op Classic save is carried on at once, with no mode to pick: so it is
+    -- asked here, before it starts (owner, 2026-11-12: "it skips the ready").
+    if campaign.classic.battleUnderWay() and not lobby.gate("CO-OP CLASSIC (carry on)", coopClassicButton) then return end
     if campaign.active then pcall(campaign.exit) end -- Classic has its own save
     -- co-op Classic runs on its own Classic profile (coop/classic), never the real one
     local ok, why = campaign.classic.enter()

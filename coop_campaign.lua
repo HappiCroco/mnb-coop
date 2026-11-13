@@ -295,6 +295,17 @@ function classic.hasSave()
     return realFs.getInfo(classic.DIR .. "/saveMNB2.lua") ~= nil
 end
 
+-- the co-op Classic save holds a battle under way (CO-OP CLASSIC carries it on at once,
+-- without the mode select: urb_engine.lua:40021-40033)
+function classic.battleUnderWay()
+    local path = classic.DIR .. "/saveMNB2.lua"
+    if not realFs.getInfo(path) then return false end
+    local okl, chunk = pcall(realFs.load, path)
+    if not (okl and type(chunk) == "function") then return false end
+    local ok, c = pcall(chunk)
+    return ok and type(c) == "table" and (tonumber(c.ui_gameStarted) or 0) ~= 0
+end
+
 -- Open the co-op Classic profile. Returns false (and a reason) if it can't.
 function classic.enter()
     if classic.active then return true end

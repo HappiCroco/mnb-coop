@@ -59,6 +59,13 @@ return {
             description = "Co-op Classic starts your squads in the middle around a radar and the Germans come from both sides. Off: the usual Classic, everyone on the left.",
         },
         {
+            id = "coopTips",
+            label = "Tutorial tips in co-op battles",
+            type = "checkbox",
+            default = false,
+            description = "The game's tip bubbles on the map (the ones the Options' SHOW TEXT CUES turns on) in co-op battles. Off: none, for the host and teammates. Your own games follow the game's option as usual.",
+        },
+        {
             id = "stackWindows",
             label = "Two copies on one PC: stack the windows",
             type = "checkbox",

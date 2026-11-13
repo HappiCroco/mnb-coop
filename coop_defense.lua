@@ -761,6 +761,13 @@ end
 -- are kept off the game's own miss line, and a German at the radar scores.
 function defense.update()
     defense.aliasSprites()
+    -- a Classic battle with our radar on the field is a defense, however it was reached (owner,
+    -- 2026-11-12: a carried-on co-op Classic battle ran as the plain game, soldiers coming in at
+    -- the left and a German scoring at the left edge). Only co-op saves have the radar.
+    if not defense.on and type(player) == "table" and player.gameType == 1 and player.gameState == 0 then
+        defense.resume()
+        if defense.on then log("defense: a battle with the radar was running without it, back on") end
+    end
     if not defense.active() then return end
     newArrivals()
     withdrawn()

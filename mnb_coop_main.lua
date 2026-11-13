@@ -319,6 +319,29 @@ function menu_goButton(...)
     return unpack(r)
 end
 
+-- Tutorial tips (the map's tip bubbles) stay out of co-op battles unless the coopTips option
+-- is on (owner, 2026-11-12). The host makes them (checkCue, urb_engine.lua:43345; the alarm
+-- kit's own at 49436) and they reach teammates in the battle updates, so the host's are enough.
+local function noCoopTips()
+    return (campaign.active or defense.wanted or defense.on or net.role ~= "offline")
+        and not net.isOn("coopTips", false)
+end
+local coopCheckCue = checkCue
+function checkCue(...)
+    if noCoopTips() then return end
+    return coopCheckCue(...)
+end
+local coopAlarmKit = deployAlarmKit
+function deployAlarmKit(...)
+    if not noCoopTips() or type(player) ~= "table" or type(player.tipCue) ~= "table" then
+        return coopAlarmKit(...)
+    end
+    local n = #player.tipCue
+    local r = { coopAlarmKit(...) }
+    for i = #player.tipCue, n + 1, -1 do table.remove(player.tipCue, i) end
+    return unpack(r)
+end
+
 local coopClassic = menu_classicButton
 function menu_classicButton(...)
     if net.role == "client" then
