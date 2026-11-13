@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "mnb_coop",
   "name": "Mud and Blood Co-op",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Co-op for up to 3 players: Multiplayer lobby, co-op campaign with your own roster of 6 (bring your best, the rest train at home), co-op Classic defense around a radar, the host's battle live on every screen, and your own soldiers to command.",
   "category": "Gameplay",
   "tags": ["multiplayer", "co-op", "campaign", "classic"],

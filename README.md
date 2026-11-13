@@ -18,8 +18,10 @@ Everyone playing together needs the same version. The co-op's options (port, joi
 QuarterMaster's Mod Options screen (QuarterMaster 1.8 or newer); without it the defaults are used.
 
 ## Play
-Main menu → **Multiplayer**. The host clicks HOST A LOBBY and shares the address (for online play behind a router, a
-[playit.gg](https://playit.gg) UDP tunnel works); teammates paste it and click JOIN. When the host picks a mode, everyone
+Main menu → **Multiplayer**. The host clicks HOST A LOBBY. The game connects through Steam: teammates accept the host's
+**INVITE (STEAM)**, click **Join Game** on the host in their Steam friends list, or paste the `steam:...#CODE` address the
+host copied and click JOIN. No port forwarding or tunnel needed. (A local address like `192.168.0.10:47913`, or a
+[playit.gg](https://playit.gg) UDP tunnel, still works too.) When the host picks a mode, everyone
 lands on the ready room: teammates press **READY**, then the host presses **START**. Each card shows where that player
 is (lobby, campaign, battle report...).
 
