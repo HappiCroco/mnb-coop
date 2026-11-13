@@ -329,7 +329,7 @@ do
   local steps, prev = 0, seen[1]
   for i = 2, #seen do if seen[i] < prev then steps = steps + 1 end prev = seen[i] end
   check(steps >= 3 and #c.queue == 0, "they come out one by one on the host's schedule, not all at once (" .. steps .. " steps)")
-  check(c.playDelay >= 0.08 and c.playDelay <= 0.35, "the delay stays small (" .. string.format("%.0f ms", c.playDelay * 1000) .. ")")
+  check(c.playDelay >= 0.04 and c.playDelay <= 0.35, "the delay stays small (" .. string.format("%.0f ms", c.playDelay * 1000) .. ")")
   check(c.interval > 0.02 and c.interval < 0.06, "each one is smoothed over the send interval (" .. string.format("%.3f", c.interval) .. " s)")
   -- the banner options draw without errors
   for _, mode in ipairs({ 1, 2, 3 }) do

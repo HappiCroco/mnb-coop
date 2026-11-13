@@ -1194,10 +1194,13 @@ end
 --   offset: the shortest trip seen (arrival - ht); it creeps up slowly so a route that got
 --           longer is followed;
 --   delay:  room for the unevenness: 2.5 send intervals + 2.5x the recent spread of trip
---           times (80 to 350 ms; a clump of three or four is absorbed from the start).
+--           times (40 to 350 ms; at 30/s about 83 ms, at 60/s about 42 ms on a steady line).
 -- Each update is smoothed over the time until the next one plays, so movement is even. An
 -- update that comes too late plays at once (and the spread grows, so the delay does too).
-local PLAY_MIN, PLAY_MAX = 0.08, 0.35
+-- (the floor was 80 ms; at 60 updates/s that wasted half the gain: owner, 2026-11-12, "it adds a
+-- delay to the orders". 40 ms lets a fast host rate shrink the delay; it still grows by itself
+-- with the spread when the line gets uneven.)
+local PLAY_MIN, PLAY_MAX = 0.04, 0.35
 
 function battle.queueSnap(msg)
     local now = love.timer.getTime()
