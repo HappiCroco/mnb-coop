@@ -96,6 +96,7 @@ end
 local battleHostMessage = net.onHostMessage
 net.onHostMessage = function(msg)
     if msg.t == "results" then return campaign.queueResults(msg) end
+    if msg.t == "career" then return campaign.queueCareer(msg) end -- my career XP from the host's battle
     if msg.t == "prompt" then return squad.onPrompt(msg) end -- my armed skill/item (aiming cursor)
     if msg.t == "ui" then return squad.onUi(msg) end         -- my HUD menu page after a button
     if msg.t == "wallet" then return wallet.onHostMessage(msg) end -- my own TP (Classic wallets)
@@ -371,6 +372,29 @@ iconClick = squad.wrapIconClick(iconClick)
 
 -- XP day cap in the co-op campaign (coop_campaign.lua): no farming the easy days.
 giveXp = campaign.wrapGiveXp(giveXp)
+
+-- Career XP for the teammates (coop_campaign.lua sendCareer): the gain the game's own
+-- end-of-battle bookkeeping gave the host goes to each teammate too.
+local coopPostMission = postMissionAdmin
+function postMissionAdmin(...)
+    local before = type(player) == "table" and tonumber(player.experience) or nil
+    local r = { coopPostMission(...) }
+    if campaign.active and before and type(player) == "table" then
+        pcall(campaign.sendCareer, "campaign", (tonumber(player.experience) or 0) - before)
+    end
+    return unpack(r)
+end
+
+local coopPostMNB2 = postMNB2Mission
+function postMNB2Mission(...)
+    local p = type(player) == "table" and player or {}
+    local before, wave, sub = tonumber(p.mnb2Experience), tonumber(p.currentWave) or 0, p.mnb2SubGame
+    local r = { coopPostMNB2(...) } -- (it ends on the campaign profile, with the Classic stats copied in)
+    if campaign.classic.active and before and sub ~= 8 and type(player) == "table" then
+        pcall(campaign.sendCareer, "classic", (tonumber(player.mnb2Experience) or 0) - before, wave)
+    end
+    return unpack(r)
+end
 
 local coopPreGame = preGameAdmin
 function preGameAdmin(...)

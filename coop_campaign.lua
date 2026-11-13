@@ -235,6 +235,9 @@ function campaign.update()
     if campaign.pendingResults and not (mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing) then
         campaign.applyPendingResults()
     end
+    if #campaign.pendingCareer > 0 and not (mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing) then
+        campaign.applyPendingCareer()
+    end
     if not campaign.active then return end
     if not campaign.onSquadPage() then campaign.setPage(1) end
     -- no main menu while co-op is open: every "back to the main menu" lands on the co-op page,
@@ -1128,6 +1131,108 @@ function campaign.applyPendingResults()
         print(string.format("[mnb_coop] mission results: %d soldiers back, home soldiers +%d XP", #msg.soldiers, half))
     end)
     campaign.sendRoster()
+end
+
+-- ---------------------------------------------------------------- career XP
+-- (owner, 2026-11-12: "the client does not get XP for campaign or classic") The game gives the
+-- player's own career experience at the end of a battle, on the host's machine only:
+-- campaign postMissionAdmin (player.experience += ui_xpTotal, a promotion past nextLevel,
+-- urb_engine.lua:39332), Classic postMNB2Mission (mnb2Experience += wave*50 + kills*5, the
+-- game counters, mnb2.lua:983-1001). The host sends each teammate the same gain ("career"),
+-- and their co-op profile gets it the way the game would have given it.
+-- Classic also goes into the teammate's own co-op Classic save (coop/classic/saveMNB2.lua):
+-- leaving Classic copies that save's rank over the profile's (mnb2.lua:1161).
+
+-- Host, after the game's end-of-battle bookkeeping: tell every teammate what it gave.
+function campaign.sendCareer(kind, xp, wave)
+    if net.role ~= "host" or net.playerCount() < 2 then return end
+    xp = math.floor(tonumber(xp) or 0)
+    if xp <= 0 and kind ~= "classic" then return end
+    for seat = 2, net.MAX_SEATS do
+        if net.seats[seat] then
+            net.sendTo(seat, { t = "career", kind = kind, xp = math.max(0, xp), wave = math.floor(tonumber(wave) or 0) })
+        end
+    end
+    log("career: %s +%d XP sent to the teammates", kind, xp)
+end
+
+local function promote(p, xpKey, rankKey, extra)
+    local ok, need = pcall(nextLevel, tonumber(p[rankKey]) or 0)
+    if ok and tonumber(need) and (tonumber(p[xpKey]) or 0) > need then
+        p[rankKey] = (tonumber(p[rankKey]) or 0) + 1
+        if extra then extra(p) end
+        return true
+    end
+    return false
+end
+
+-- the game's Classic end-of-game counters (mnb2.lua:992-1001)
+local function addClassicGame(p, xp, wave)
+    p.mnb2Experience = (tonumber(p.mnb2Experience) or 0) + xp
+    p.totalMNB2Game = (tonumber(p.totalMNB2Game) or 0) + 1
+    p.mnb2vcGames = (tonumber(p.mnb2vcGames) or 0) + 1
+    p.waveSum = (tonumber(p.waveSum) or 0) + wave
+    p.avWave = math.floor(p.waveSum / math.max(1, p.totalMNB2Game))
+    if wave > (tonumber(p.maxWave) or 0) then p.maxWave = wave end
+    return promote(p, "mnb2Experience", "mnb2Rank", function(q)
+        q.paraChallengeCredit = (tonumber(q.paraChallengeCredit) or 0) + 1
+    end)
+end
+
+-- Teammate: apply one "career" message to this player's co-op profile (and Classic save).
+function campaign.applyCareer(msg)
+    local xp = math.floor(tonumber(msg.xp) or 0)
+    local wave = math.floor(tonumber(msg.wave) or 0)
+    if xp < 0 or xp > 1e6 or wave < 0 or wave > 1e5 then return end
+    local promoted = false
+    if msg.kind == "campaign" then
+        if xp <= 0 then return end
+        campaign.withProfile(function(p)
+            p.experience = (tonumber(p.experience) or 0) + xp
+            if (tonumber(p.rank) or 0) < 13 then
+                promoted = promote(p, "experience", "rank", function(q)
+                    q.skillCredit = (tonumber(q.skillCredit) or 0) + 1
+                end)
+            end
+        end)
+    elseif msg.kind == "classic" then
+        campaign.withProfile(function(p) promoted = addClassicGame(p, xp, wave) end)
+        -- the co-op Classic save, so leaving Classic later doesn't copy an older rank back
+        local path = campaign.classic.DIR .. "/saveMNB2.lua"
+        if realFs.getInfo(path) then
+            local okl, chunk = pcall(realFs.load, path)
+            local ok2, c = false, nil
+            if okl and type(chunk) == "function" then ok2, c = pcall(chunk) end
+            if ok2 and type(c) == "table" then
+                addClassicGame(c, xp, wave)
+                local data = serialize(c)
+                if data then pcall(realFs.write, path, data) end
+            end
+        end
+    else
+        return
+    end
+    local text = string.format("Career: +%d XP%s", xp, promoted and ", promoted!" or "")
+    if mnbCoop and mnbCoop.notice then pcall(mnbCoop.notice, text) end
+    print("[mnb_coop] " .. text .. " (" .. tostring(msg.kind) .. ")")
+end
+
+-- Teammate: "career" from the host, kept until this machine is back from the battle view
+-- (its `player` is the host's mirror until then).
+campaign.pendingCareer = {}
+function campaign.queueCareer(msg)
+    if #campaign.pendingCareer >= 8 then return end
+    campaign.pendingCareer[#campaign.pendingCareer + 1] = msg
+    if not (mnbCoop and mnbCoop.battle and mnbCoop.battle.viewing) then campaign.applyPendingCareer() end
+end
+
+function campaign.applyPendingCareer()
+    local list = campaign.pendingCareer
+    campaign.pendingCareer = {}
+    for _, msg in ipairs(list) do
+        local ok, err = pcall(campaign.applyCareer, msg)
+        if not ok then print("[mnb_coop] career: " .. tostring(err)) end
+    end
 end
 
 -- ---------------------------------------------------------------- squad screen

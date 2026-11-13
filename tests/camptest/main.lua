@@ -56,5 +56,25 @@ check(realAfterQuit.name == "real" and realAfterQuit.dayz == 40 and realAfterQui
 campaign.active = true local coopAfter = love.filesystem.load("saveMNB3.lua")() campaign.active = false
 check(coopAfter.dayz == 6, "co-op progress saved on quit")
 check(campaign.reset() and not campaign.hasSave() and love.filesystem.getInfo("coop/campaign/saveMNB3.lua.old") ~= nil, "reset keeps .old")
+
+-- career XP from the host's battle lands on this teammate's co-op profile (and Classic save)
+nextLevel = function(rank) return (rank + 1) * 1000 end
+campaign.applyCareer({ kind = "campaign", xp = 1500 })
+local function coopProfile() campaign.active = true local c = love.filesystem.load("saveMNB3.lua")() campaign.active = false return c end
+local cp = coopProfile()
+check(cp.experience == 1500 and cp.rank == 1 and cp.skillCredit == 1, "campaign career XP and a promotion")
+check(love.filesystem.read("saveMNB3.lua") ~= nil and love.filesystem.load("saveMNB3.lua")().name == "real", "the real profile isn't touched")
+love.filesystem.createDirectory("coop/classic")
+love.filesystem.write("coop/classic/saveMNB2.lua", ser({ name = "cls", mnb2Experience = 900, mnb2Rank = 0, totalMNB2Game = 3, waveSum = 30, maxWave = 12 }))
+campaign.applyCareer({ kind = "classic", xp = 200, wave = 20 })
+cp = coopProfile()
+check(cp.mnb2Experience == 200 and cp.totalMNB2Game == 1 and cp.maxWave == 20, "Classic XP and game counters on the profile")
+local cls = love.filesystem.load("coop/classic/saveMNB2.lua")()
+check(cls.mnb2Experience == 1100 and cls.mnb2Rank == 1 and cls.totalMNB2Game == 4 and cls.maxWave == 20 and cls.avWave == 12,
+  "and in the co-op Classic save (promoted there)")
+campaign.applyCareer({ kind = "campaign", xp = -5 })
+campaign.applyCareer({ kind = "classic", xp = 9e9, wave = 1 })
+check(coopProfile().experience == 1500, "bad numbers are ignored")
+love.filesystem.remove("coop/classic/saveMNB2.lua")
 print(("%d passed, %d failed"):format(passes, fails))
 love.event.quit(fails == 0 and 0 or 1)
